@@ -1,4 +1,5 @@
 1.: nearby (Python)
+
 I decided to use an approach where I create a sorted list of the best topics for every query, because it looked more efficient:
 Suppose we have T topics, Q questions, and N queries;
 If the query is about a topic (t-type query), and we were to compute the distance of each topic's point from the query's center, and then sort the
