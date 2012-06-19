@@ -276,7 +276,7 @@ class Story():
         @param score:    Score of the story;
         @param height:    Height needed to show the story.
     '''
-    def score__(self, time, score, height):
+    def __init__(self, time, score, height):
         self._time = time
         self.score = score
         self._height = height
