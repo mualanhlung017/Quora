@@ -607,7 +607,7 @@ class AnnealingAlgorithm():
                         continue
                                             
                     flip = random()
-                    exponent = float(delta/new_value)*K/temperature
+                    exponent = float(delta/new_value)*AnnealingAlgorithm.K/temperature
                     merit = e ** exponent
     
                     if delta > 0 : # ACCEPT-WIN
