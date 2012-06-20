@@ -2,13 +2,10 @@
 @author: mlarocca
 '''
 
-from time import time
-from random import random, randrange, seed
-from math import copysign
+from math import floor
 import re
 from sys import stdin, stdout, argv
 from copy import deepcopy
-from math import e
 
 
 
@@ -38,9 +35,6 @@ class Story():
         
 
 
-
-
-
  
 ''' Convenience class for a solution
 ''' 
@@ -67,7 +61,6 @@ class BacktrackingAlgorithm():
                                 the capacity of the Knapsack)
     '''
     def __init__(self, full_stories_set, page_height):
-        seed(time())
         self.__full_stories_set = full_stories_set
         self.__N = len(self.__full_stories_set)
         self.__page_height = page_height
@@ -121,18 +114,18 @@ class BacktrackingAlgorithm():
                 else:
                     return 1
 
-    ''' Performs, recursively, the Horowitz-Sahni algorithms for 0-1 KP problem.
+    ''' Performs, iteratively, the Horowitz-Sahni algorithms for 0-1 KP problem.
         INVARIANT: the elements to put in the knapsack must be ordered according
                     to the ratio value/cost, from the highest to the lowest.
-        For each call, unless the whole list has been already examined (pos >= self.__N)
-        examine recursively the two branches of the solution tree;
-        if the element corresponding to the current position can't be added to
-        the solution (because its cost is too high) checks whether it was
-        performing a "forward move", i.e. adding as many (at least 1) consecutive
-        elements as possible to the solution, and in that case compare the current
-        solution with the best one so far (it is safe to do so because if the
-        algorithm is not performing a forward move no element has been added to
-        the current solution since the last time it was compared to the best one.
+        Tries to add as much elements to the set as possible according to their
+        scaled value ("forward move") and then, when it funds a critical element 
+        (i.e. one that cannot be added to the knapsack) estimates an upper bound
+        (in particular Dantzig's upper bound) for the maximum value that is possible
+        to get with the current elements included in the solution:
+        if this bound is lower than the best score obtained so far, prunes the
+        recursion and perform a backtracking move, looking for the closest '1'
+        in the subset bit mask (if it exists), and removing the corresponding
+        element from the knapsack.
         
         @param mask:    A bit mask that keeps track of the elements added to the
                         solution so far;
@@ -140,41 +133,115 @@ class BacktrackingAlgorithm():
         @param score:   Total score for the current solution;
         @param height:    Total height for the curent solution;
         @param pos:    The index of the new element to examine;
-        @param forward_move: Is the algorithm performing a forward move or a backtracking move?
     '''
-    def __horowitz_sahni(self, mask, size, score, height, pos, forward_move):
-        if pos >= self.__N:
-            if forward_move:
-                solution = Solution(mask, size, score, height)
-                if self.compareSolutions(solution, self.__best_solution) < 0:
-                    self.__best_solution = solution
-            return
-            
-        story = self.__full_stories_set[pos]
-        residual_capacity = self.__page_height - height
-        #First tries a forward move, if possible
-        if story._height > residual_capacity:   #Pruning
-            if forward_move:
-                solution = Solution(mask, size, score, height)
-                if self.compareSolutions(solution, self.__best_solution) < 0:
-                    self.__best_solution = solution
-        else:
-            mask[pos] = 1
-            self.__horowitz_sahni(mask, size + 1, score + story._score, height + story._height, pos + 1, True)
-            mask[pos] = 0
-            
-        #Then performs a backtracking
-        self.__horowitz_sahni(mask, size, score, height, pos + 1, False)
-    
+    def __horowitz_sahni(self):
+        mask = [0 for i in range(self.__N)]
+        best_solution = Solution(mask, 0, 0 ,0)
+        score = 0
+        height = 0
+        size = 0 
+        
+        j = 0
+        while True:
+            while j < self.__N:
+                
+                #Tries a forward move        
+                pos = j
+                
+                initial_score = score
+                initial_heigh = height
+                initial_size = size
+                
+                while pos < self.__N:
+                    story = self.__full_stories_set[pos]
+                    residual_capacity = self.__page_height - height
+                    
+                    #First tries a forward move, if possible
+                    if story._height > residual_capacity:
+                        break
+                    else:
+                        size += 1
+                        mask[pos] = 1
+                        score += story._score
+                        height += story._height
+                        pos += 1
 
+                if pos < self.__N:
+                    #Estimates Dantzig's upper bound
+                    story = self.__full_stories_set[pos]
+                    upper_bound = floor(story._scaled_score * (self.__page_height - height))
+                    
+                    if best_solution.score > score + upper_bound:
+                        #The forward move would led us to a better solution,
+                        #so it performs backtracking
+
+                        #Brings the situation back at before the forward move
+                        for k in range(j,pos):
+                            mask[k] = 0
+                        
+                        score = initial_score 
+                        height = initial_heigh
+                        size = initial_size
+
+                        #Looks for a possible backtracking move
+                        pos = j - 1
+                        while pos >= 0 and mask[pos] == 0:
+                            pos -= 1
+                        if pos < 0:
+                            #No more backtracking possible
+                            return best_solution
+                        else:
+                            #Exclude the element from the knapsack
+                            mask[pos] = 0
+                            size -= 1
+                            story = self.__full_stories_set[pos]
+                            score -= story._score
+                            residual_capacity += story._height
+                            height -= story._height
+                            j = pos + 1
+                    else:
+                        #The forward move was successful: discards the next element
+                        #(which couldn't have been added because violates the
+                        #knapsack capacity) and tries to perform more f. moves.
+                        j = pos + 1
+                else:
+                    #Completed one "depth first search" visit in the solution 
+                    #space tree: now must break off the while cycle
+                    break
+                    
+            #INVARIANT: j == self.__N:
+            #Completed one "depth first search" visit in the solution space tree.
+            solution = Solution(mask, size, score, height)
+            if self.compareSolutions(solution, best_solution) < 0:
+                #Checks current solution
+                best_solution = solution
+
+            #Tries a backtracking move
+            pos = self.__N - 1
+            while pos >= 0 and mask[pos] == 0:
+                pos -= 1
+            if pos < 0:
+                #No more backtracking possible
+                return best_solution
+            else:
+                #Exclude the element from the knapsack
+                mask[pos] = 0
+                size -= 1
+                story = self.__full_stories_set[pos]
+                score -= story._score
+                residual_capacity += story._height
+                height -= story._height
+                j = pos + 1
+        
+        
+                    
     ''' Shorthand: Performs the Horowitz-Sahni algorithms on the input, and
         then returns the best solution found.
     '''
     def start(self):
         
-        self.__best_solution = Solution([0 for i in range(self.__N)], 0, 0, 0)
-        self.__horowitz_sahni(deepcopy(self.__best_solution.mask), 0, 0, 0, 0, True)
-        return self.__best_solution.score, self.__get_subset(self.__best_solution.mask)
+        best_solution = self.__horowitz_sahni()
+        return best_solution.score, self.__get_subset(best_solution.mask)
 
 
         

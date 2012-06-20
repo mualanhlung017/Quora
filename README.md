@@ -32,7 +32,7 @@ The second approach uses simulated annealing: while it cannot guarantee an optim
 4.: Feed Optimizer (Python)
 
 The problem is an instance of 0-1 Knapsack problem, and that problem is NP-Hard.
-The Horowitz-Sahni algorithm, however, works quite well unless the story sets are becomes very large.
+The Horowitz-Sahni algorithm, however, works quite well even for large inputs.
 For smaller inputs, two randomized solutions, a simulated annealing and a genetic algorithm, are also provided, although they are clearly outperformed by the exact backtracking algorithm.
  
 
