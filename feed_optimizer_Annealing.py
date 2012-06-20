@@ -71,14 +71,14 @@ class AnnealingAlgorithm():
     __STEPS_PER_TEMP = 5#0         #1000
     
     ''''Problem specific Boltzman's constant'''
-    __K = 1e-13   
+    __K = 1e-5
 
     ''' Constructor
         @param D:    The dictionary from were words can be drafted.
     '''
     def __init__(self, full_stories_set, page_height):
         seed(time())
-        self.__full_stories_set = full_stories_set
+        self.__full_stories_set = sorted(full_stories_set, key=lambda s:s._score, reverse=True)
         self.__chromosome_length = len(full_stories_set)
         self.__page_height = page_height
         
@@ -148,16 +148,23 @@ class AnnealingAlgorithm():
         score = 0
         height = 0
         size = 0
-        while (size < N):   #Adds random stories until the limit would be crossed
-            i = indices[size]
+        j = 0
+        while (j < N):   #Adds random stories until the limit would be crossed
+            i = indices[j]
             story = self.__full_stories_set[i]
-            if height + story._height < self.__page_height:
+            slack = self.__page_height - story._height
+            if height <= slack:
                 mask[i] = 1
                 score += story._score
                 height += story._height
                 size += 1
+                j += 1
             else:
-                break;
+                if slack == 0:
+                    break
+                else:
+                    j += 1
+                    continue
 
         valid = 1
 
@@ -211,19 +218,23 @@ class AnnealingAlgorithm():
             for j in range( AnnealingAlgorithm.__STEPS_PER_TEMP ):
                 new_solution = self.__mutation_1(solution)
 
-                delta = float(solution.valid * solution.score - new_solution.valid * new_solution.score) / (new_solution.score + 1)
-
-                flip = random()
-                exponent = delta * AnnealingAlgorithm.__K/temperature
-                merit = e ** exponent
 
                 if self.compareSolutions(new_solution, solution) < 0 : # ACCEPT-WIN
                     solution = deepcopy(new_solution)
                     if self.compareSolutions(solution, best_solution) < 0:
                         best_solution = deepcopy(solution)
                         
-                elif merit > flip :  #ACCEPT-LOSS
-                    solution = deepcopy(new_solution)
+                else:
+                    delta = float(solution.valid * solution.score - new_solution.valid * new_solution.score)
+    
+                    flip = random()
+                    exponent = -delta * AnnealingAlgorithm.__K/temperature
+                    merit = e ** exponent
+    
+#                    print 'merit = ', merit
+                    
+                    if merit > flip :  #ACCEPT-LOSS
+                        solution = deepcopy(new_solution)
     
             if  self.compareSolutions(start_solution, solution) < 0 : # rerun at this temp
                 temperature /= AnnealingAlgorithm.__COOLING_FRACTION
