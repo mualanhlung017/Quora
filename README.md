@@ -31,21 +31,10 @@ The second approach uses simulated annealing: while it cannot guarantee an optim
 
 4.: Feed Optimizer (Python)
 
-Since the problem is an instance of 0-1 Knapsack problem, and that problem is NP-Hard, an optimization algorithm appears the best solution to get optimal results in a limited amount of time.
-In particular, due to the nature of the problem, I decided to use a Genetic Algorithm.
-Chromosomes are array of flags, with one flag for each story, such that a flag is True if the corresponding story is inserted in the feed, False otherwise;
-The fitness of an individual is a tuple: 
-The first and most important element is 0 or 1 depending respectively on if the total height of the stories chosen is less than or equal the available space on the page;
-The second one is the total score of the inserted stories for elements that do not violate the constrain on height, the score multiplied by the ratio between page_height and total set height otherwise;
-The third element is the reciprocal of the number of stories included, so that the fewer the stories, the higher the rank;
-The fourth and last element of the tuple is a number computed from the lexicographic order of the stories (with one-to-one lists-to-number correspondence).
-This way the individuals that do not violate the constrains appears at the top of the ranking, and they follow the order imposed by the challenge specifications, so that at any moment the top element, if valid, is the best set of stories found; among the individuals that do violate the constrains, furthermore, the fitness is higher for those with fewer stories, i.e. those for which it is likely that removing one story will lead to a valid set.
-Elitism is used (the best element is always copied on the next generation;
-Single point Crossover is used for individuals reproduction: it is randomly chosen one point in the middle of the chromosome, and the 4 halves created by dividing the two individuals' genomes are mixed together to form 2 new individuals;
-Individuals are chosen for crossover using round robin selection;
-Only one kind of mutation is applied:
-One flag, chosen at random, is flipped, so that one story previously included in the set won't be included anymore, or vice versa;
-The genetic algorithm structure is designed with the Template Design Pattern in mind, so that it is easily reusable.
+The problem is an instance of 0-1 Knapsack problem, and that problem is NP-Hard.
+The Horowitz-Sahni algorithm, however, works quite well even for large inputs.
+For smaller inputs, two randomized solutions, a simulated annealing and a genetic algorithm, are also provided, although they are clearly outperformed by the exact backtracking algorithm.
+ 
 
 From command line, a few parameters can be passed:
 

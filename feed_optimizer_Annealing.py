@@ -54,107 +54,83 @@ class Solution():
 ''' Simulated Annealing Algorithm class.
     Exposes a method that performs simulated annealing on a dictionary (passed upon instance construction) to find an optimal stepladder.
     The problem space has plenty of local minima, but the algorithm appears performant enough to reach the global minimum even with a few
-    cooling steps and mutation cycles for cooling step, resulting quicker than exhaustive backtracking.   
+    cooling steps and mutation cycles for cooling step, resulting quicker than exhaustive start.   
 '''
-class AnnealingAlgorithm():
+class BacktrackingAlgorithm():
   
     ''' Start temperature'''
     __INITIAL_TEMPERATURE = 1
     
     ''' How many times do we cool'''
-    __COOLING_STEPS = 10        #500
+    __COOLING_STEPS = 20        #500
     
     ''' How much to cool each time'''
     __COOLING_FRACTION = 0.97    
     
     ''' Number of mutations cycles for each temperature cooling step - lower makes it faster, higher makes it potentially better. '''
-    __STEPS_PER_TEMP = 5#0         #1000
+    __STEPS_PER_TEMP = 50         #1000
     
     ''''Problem specific Boltzman's constant'''
     __K = 1e-5
 
     ''' Constructor
-        @param D:    The dictionary from were words can be drafted.
+        @param full_stories_set
+        @param page_height:    The limit for the 
     '''
     def __init__(self, full_stories_set, page_height):
         seed(time())
-        self.__full_stories_set = sorted(full_stories_set, key=lambda s:s._score, reverse=True)
-        self.__chromosome_length = len(full_stories_set)
+        self.__full_stories_set = sorted(full_stories_set, key=lambda s:float(s._score)/s._height, reverse=True)
+        self.__N = len(self.__full_stories_set)
         self.__page_height = page_height
         
         return
-    
+
     def __get_subset(self, mask):
         #INVARIANT: len(__full_stories_set) == len(self.__chromosome):
         return [self.__full_stories_set[i] for i in range(len(mask)) if mask[i]]
 
-
-    def compareSolutions(self, solution1, solution2):
+    @staticmethod
+    def get_total_steps():
+        return BacktrackingAlgorithm.__COOLING_STEPS * BacktrackingAlgorithm.__STEPS_PER_TEMP
         
-        if solution1.valid:
-            if not solution2.valid:
-                return -1
-            else:
-                if solution1.score > solution2.score:
-                    return -1
-                elif solution1.score < solution2.score:
-                    return 1
-                else:
-                    if solution1.size < solution2.size:
-                        return -1
-                    elif solution1.size > solution2.size:
-                        return 1
-                    else:
-                        if solution1.mask <= solution2.mask:
-                            return -1
-                        else:
-                            return 1
-        elif solution2.valid:
-            return 1 
+    def compareSolutions(self, solution_1,solution_22):
+        #DEBUG
+        if not (solution_1.valid and solution_22.valid):
+            raise 
+        
+        #INVARIANT: all solutions tested are valid
+        if solution_1.score >solution_22.score:
+            return -1
+        elif solution_1.score <solution_22.score:
+            return 1
         else:
-            if solution1.score > solution2.score:
+            if solution_1.size <solution_22.size:
                 return -1
-            elif solution1.score < solution2.score:
+            elif solution_1.size >solution_22.size:
                 return 1
             else:
-                if solution1.size < solution2.size:
+                if solution_1.mask <=solution_22.mask:
                     return -1
-                elif solution1.size > solution2.size:
-                    return 1
                 else:
-                    if solution1.mask <= solution2.mask:
-                        return -1
-                    else:
-                        return 1
-            
+                    return 1
 
     ''' Creates a solution at random
         Initialize the bit mask .
         The probability distribution over the space of the subsets is uniform.
         @return:    A Solution Object.
     '''
-    def __random_solution(self):
-        N = self.__chromosome_length
-        mask = [0 for i in range(N)]
-        #Create an array with a random permutation of the indices
-        #(with uniform distribution over the set of all permutations)
-        indices = range(N)
-        for i in range(N):
-            j = randrange(i,N)
-            tmp = indices[i]
-            indices[i] = indices[j]
-            indices[j] = tmp
-        
+    def __initial_solution(self):
+        mask = [0 for i in range(self.__N)]
+
         score = 0
         height = 0
         size = 0
         j = 0
-        while (j < N):   #Adds random stories until the limit would be crossed
-            i = indices[j]
-            story = self.__full_stories_set[i]
+        while (j < self.__N):   #Adds random stories until the limit would be crossed
+            story = self.__full_stories_set[j]
             slack = self.__page_height - story._height
             if height <= slack:
-                mask[i] = 1
+                mask[j] = 1
                 score += story._score
                 height += story._height
                 size += 1
@@ -179,7 +155,7 @@ class AnnealingAlgorithm():
     '''
     def __mutation_1(self, solution):
         mask = deepcopy(solution.mask)
-        point = randrange(self.__chromosome_length)
+        point = randrange(self.__N)
         mask[point] = int( copysign(mask[point]-1, 1) )
         if mask[point]:
             size = solution.size + 1
@@ -197,49 +173,48 @@ class AnnealingAlgorithm():
         return Solution(mask, size, valid, score, height)
         
 
-    ''' Single iteration of simulated annealing
-        @return: (best_value, best_solution)
-                best_solution is the the best solution to the problem that this cycle of simulated annealing could find, and best_value 
-                is its _score according to the problem's own metric.
-                
+    ''' First kind of mutation:         
+        One flag, chosen at random, is flipped, so that one story previously
+        included in the set won't be included anymore, or viceversa;
+        @param solution:    The current solution of the annealing;
+        @return:    The new solution obtained after the mutation           
     '''
-    def __annealing(self):
+    def __mutation_2(self, solution):
         
-        temperature = AnnealingAlgorithm.__INITIAL_TEMPERATURE
-    
-        solution = self.__random_solution()
-        best_solution = deepcopy(solution)
+        mask = deepcopy(solution.mask)
+        mask_1 = [i for i in range(self.__N) if mask[i] == 1]
+        if len(mask_1) == 0:
+            return solution
         
-        for i in range(AnnealingAlgorithm.__COOLING_STEPS):
-            temperature *= AnnealingAlgorithm.__COOLING_FRACTION
+        point = mask_1[randrange(len(mask_1))]
+        
+        mask[point] = 0
+        size = solution.size - 1
+        score = solution.score - self.__full_stories_set[point]._score
+        height = solution.height - self.__full_stories_set[point]._height
+        point += 1
+        
+        while point < self.__N:   #Adds random stories until the limit would be crossed
+            story = self.__full_stories_set[point]
+            if mask[point]==1:
+                point += 1
+                continue
             
-            start_solution = deepcopy(solution)
-            
-            for j in range( AnnealingAlgorithm.__STEPS_PER_TEMP ):
-                new_solution = self.__mutation_1(solution)
-
-
-                if self.compareSolutions(new_solution, solution) < 0 : # ACCEPT-WIN
-                    solution = deepcopy(new_solution)
-                    if self.compareSolutions(solution, best_solution) < 0:
-                        best_solution = deepcopy(solution)
-                        
+            slack = self.__page_height - story._height
+            if height <= slack:
+                mask[point] = 1
+                score += story._score
+                height += story._height
+                size += 1
+                point += 1
+            else:
+                if slack == 0:
+                    break
                 else:
-                    delta = float(solution.valid * solution.score - new_solution.valid * new_solution.score)
-    
-                    flip = random()
-                    exponent = -delta * AnnealingAlgorithm.__K/temperature
-                    merit = e ** exponent
-    
-#                    print 'merit = ', merit
-                    
-                    if merit > flip :  #ACCEPT-LOSS
-                        solution = deepcopy(new_solution)
-    
-            if  self.compareSolutions(start_solution, solution) < 0 : # rerun at this temp
-                temperature /= AnnealingAlgorithm.__COOLING_FRACTION
-    
-        return best_solution
+                    point += 1
+                    continue 
+        return Solution(mask, size, 1, score, height)
+
 
     '''Simulated annealing main: until all the allotted time has been used, keeps restarting
        the annealing procedure and saves its result
@@ -247,35 +222,61 @@ class AnnealingAlgorithm():
        @return: (best_score, best_solution)
                The best solution found by simulated annealing, and its _score.
     '''
-    def simulated_annealing(self, max_time, file_log=None):
+    def start(self, max_time, file_log=None):
     
-        ''' Checks that at least one word is saved in the dictionary
-            (otherwise, no valid stepladder can be created).
-            INVARIANT:  word length filter has already been applied to the
-                        dictionary.
+        ''' Checks that at least one story exists (otherwise the best
+            solution is the empty set)
         '''
         if len(self.__full_stories_set) == 0:
             return 0, []
         
         start_time = time()
-        best_solution = None
+        
+        temperature = BacktrackingAlgorithm.__INITIAL_TEMPERATURE
+    
+        initial_solution = self.__initial_solution()
+        best_solution = deepcopy(initial_solution)
+        
+        while True:
+            
+            for i in range(BacktrackingAlgorithm.__COOLING_STEPS):
+                solution = deepcopy(initial_solution)
+                start_solution = deepcopy(solution)
+                                
+                temperature *= BacktrackingAlgorithm.__COOLING_FRACTION
+                
+                for j in range( BacktrackingAlgorithm.__STEPS_PER_TEMP ):
+                    new_solution = self.__mutation_2(solution)
+    
+    
+                    if self.compareSolutions(new_solution, solution) < 0 : # ACCEPT-WIN
+                        solution = deepcopy(new_solution)
+                        if self.compareSolutions(solution, best_solution) < 0:
+                            best_solution = deepcopy(solution)
+                            
+                    else:
+                        delta = float(solution.valid * solution.score - new_solution.valid * new_solution.score)
+        
+                        flip = random()
+                        exponent = -delta * BacktrackingAlgorithm.__K/temperature
+                        merit = e ** exponent
+        
+    #                    print 'merit = ', merit
+                        
+                        if merit > flip :  #ACCEPT-LOSS
+                            solution = deepcopy(new_solution)
+        
+                if  self.compareSolutions(start_solution, solution) < 0 : # rerun at the same temperature
+                    temperature /= BacktrackingAlgorithm.__COOLING_FRACTION
+            
 
-        #Continues until the execution exceeded the allotted time
-        while time() < start_time + max_time:
-                solution = self.__annealing()
-                if (best_solution == None
-                    or self.compareSolutions(solution, best_solution) < 0):
+                #Continues until the execution exceeded the allotted time
+                if time() >= start_time + max_time:
+                    if best_solution.valid:
+                        return best_solution.score, self.__get_subset(best_solution.mask)
+                    else:
+                        return 0, []
                     
-                    best_solution = deepcopy(solution)
-                    
-                if file_log:
-                    file_log.write("Best: ({}, score:{})  -  Last:  ({}, score:{})\n"
-                                   .format(best_solution.valid, best_solution.score, 
-                                           solution.valid, solution.score))
-        if best_solution.valid:
-            return best_solution.score, self.__get_subset(best_solution.mask)
-        else:
-            return 0, []
 
 
 
@@ -302,8 +303,8 @@ RELOAD_RE = 'R' + SEPARATOR_RE + INTEGER_RE
 
 '''Reads the input from a file f
    The input is assumed to be formatted as follows:
-   First line: 3 integers __chromosome_length  W  H
-   __chromosome_length lines representing events, and so composed by 1 char (the event type) followed by either 1 or 3 integers
+   First line: 3 integers __N  W  H
+   __N lines representing events, and so composed by 1 char (the event type) followed by either 1 or 3 integers
    @param f:    The file from which the input should be read;
    @return: 
                events:    The list of events.
@@ -368,8 +369,8 @@ def read_input(f):
                                     time of each run of the GA.
                                     
 '''
-def main_handler(file_in, file_out, file_log, population_size, global_time_limit):
-      
+def main_handler(file_in, file_out, file_log, global_time_limit):
+    start_time  = time()
     results_set = []
     stories_set = []
       
@@ -380,26 +381,32 @@ def main_handler(file_in, file_out, file_log, population_size, global_time_limit
     #limit (4.5 seconds by default)
     runs = len([e for e in events_set if e[0]=='R'])
     if runs == 0:
-        raise "No reload request in the input!"
-    time_limit = float(global_time_limit) / (1. + runs)   
+        return
+        #raise "No reload request in the input!"
     
     for event in events_set:
         if event[0] == 'S':
             #It's a story that must be added to DB
             stories_set.append(Story(event[1], event[2], event[3]))
         elif event[0] == 'R':
+            #dynamically adjust the time limit for each step according to the remaining time 
+            time_limit = float(global_time_limit - (time()-start_time)) / (BacktrackingAlgorithm.get_total_steps() * runs)   
+
             min_time = event[1] - time_window
-            recent_stories = [story for story in stories_set if story._time >= min_time ]
-            annealing = AnnealingAlgorithm(recent_stories, page_height)
+            recent_stories = [story for story in stories_set
+                              if story._time >= min_time
+                              and story._height <= page_height ]
+            annealing = BacktrackingAlgorithm(recent_stories, page_height)
 
             if file_log != None:
                 file_log.write('Request at time {}\n'.format(event[1]))
             
-            score, subset = annealing.simulated_annealing(time_limit, file_log)
+            score, subset = annealing.start(time_limit, file_log)
             
             result_string = '{} {}'.format(score, len(subset))
             for story in subset:
                 result_string += ' {}'.format(story._id)
+ 
             results_set.append(result_string+'\n')
                  
     file_out.writelines(results_set)
@@ -429,13 +436,11 @@ def main_handler(file_in, file_out, file_log, population_size, global_time_limit
 if __name__ == '__main__':
     
     DEFAULT_TIME_LIMIT = 4.5
-    DEFAULT_POPULATION_SIZE = 25
     
     file_in = stdin
     file_out = stdout
     file_log = None
-    population_size = DEFAULT_POPULATION_SIZE
-    
+        
     time_limit = DEFAULT_TIME_LIMIT
 
     for i in range(1, len(argv)):
@@ -489,18 +494,5 @@ if __name__ == '__main__':
             except:
                 print 'Error using -tl option: the time limit will be set to default'
                 time_limit = DEFAULT_TIME_LIMIT
-        if (argv[i] == '-ps'):
-            i += 1
-            if i >= len(argv):
-                print 'Error using option -ps: int required'
-                break
-            try:
-                #Takes the second parameter as the float time limit
-                population_size = int(argv[i])
-                if population_size <= 4:
-                    raise
-            except:
-                print 'Error using -ps option: population size will be set to default'
-                population_size = DEFAULT_POPULATION_SIZE        
     
-    main_handler(file_in, file_out, file_log, population_size, time_limit)
+    main_handler(file_in, file_out, file_log, time_limit)
