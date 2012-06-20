@@ -56,7 +56,7 @@ class Solution():
     The problem space has plenty of local minima, but the algorithm appears performant enough to reach the global minimum even with a few
     cooling steps and mutation cycles for cooling step, resulting quicker than exhaustive start.   
 '''
-class BacktrackingAlgorithm():
+class AnnealingAlgorithm():
   
     ''' Start temperature'''
     __INITIAL_TEMPERATURE = 1
@@ -91,7 +91,7 @@ class BacktrackingAlgorithm():
 
     @staticmethod
     def get_total_steps():
-        return BacktrackingAlgorithm.__COOLING_STEPS * BacktrackingAlgorithm.__STEPS_PER_TEMP
+        return AnnealingAlgorithm.__COOLING_STEPS * AnnealingAlgorithm.__STEPS_PER_TEMP
         
     def compareSolutions(self, solution_1,solution_22):
         #DEBUG
@@ -232,20 +232,20 @@ class BacktrackingAlgorithm():
         
         start_time = time()
         
-        temperature = BacktrackingAlgorithm.__INITIAL_TEMPERATURE
+        temperature = AnnealingAlgorithm.__INITIAL_TEMPERATURE
     
         initial_solution = self.__initial_solution()
         best_solution = deepcopy(initial_solution)
         
         while True:
             
-            for i in range(BacktrackingAlgorithm.__COOLING_STEPS):
+            for i in range(AnnealingAlgorithm.__COOLING_STEPS):
                 solution = deepcopy(initial_solution)
                 start_solution = deepcopy(solution)
                                 
-                temperature *= BacktrackingAlgorithm.__COOLING_FRACTION
+                temperature *= AnnealingAlgorithm.__COOLING_FRACTION
                 
-                for j in range( BacktrackingAlgorithm.__STEPS_PER_TEMP ):
+                for j in range( AnnealingAlgorithm.__STEPS_PER_TEMP ):
                     new_solution = self.__mutation_2(solution)
     
     
@@ -258,7 +258,7 @@ class BacktrackingAlgorithm():
                         delta = float(solution.valid * solution.score - new_solution.valid * new_solution.score)
         
                         flip = random()
-                        exponent = -delta * BacktrackingAlgorithm.__K/temperature
+                        exponent = -delta * AnnealingAlgorithm.__K/temperature
                         merit = e ** exponent
         
     #                    print 'merit = ', merit
@@ -267,7 +267,7 @@ class BacktrackingAlgorithm():
                             solution = deepcopy(new_solution)
         
                 if  self.compareSolutions(start_solution, solution) < 0 : # rerun at the same temperature
-                    temperature /= BacktrackingAlgorithm.__COOLING_FRACTION
+                    temperature /= AnnealingAlgorithm.__COOLING_FRACTION
             
 
                 #Continues until the execution exceeded the allotted time
@@ -390,13 +390,13 @@ def main_handler(file_in, file_out, file_log, global_time_limit):
             stories_set.append(Story(event[1], event[2], event[3]))
         elif event[0] == 'R':
             #dynamically adjust the time limit for each step according to the remaining time 
-            time_limit = float(global_time_limit - (time()-start_time)) / (BacktrackingAlgorithm.get_total_steps() * runs)   
+            time_limit = float(global_time_limit - (time()-start_time)) / (AnnealingAlgorithm.get_total_steps() * runs)   
 
             min_time = event[1] - time_window
             recent_stories = [story for story in stories_set
                               if story._time >= min_time
                               and story._height <= page_height ]
-            annealing = BacktrackingAlgorithm(recent_stories, page_height)
+            annealing = AnnealingAlgorithm(recent_stories, page_height)
 
             if file_log != None:
                 file_log.write('Request at time {}\n'.format(event[1]))
