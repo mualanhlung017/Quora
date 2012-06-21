@@ -61,8 +61,12 @@ class SortedList():
                 #if the distances are within threshold, then compares ids
                 return ib[0]-ia[0]
         #Add the item to the list, coupled with its distance, computed according to the metric passed upon construction
-        self.items.append( (item, self.metric(item) ) )         
-        self.items = sorted(self.items, cmp=compare_items )
+        i = 0
+        item = (item, self.metric(item))
+        while i < len(self.items) and compare_items(self.items[i], item) < 0:
+            i += 1
+
+        self.items.insert(i, item) 
 
         self.trim(self.max_size)        #If a max number of elements for the list is defined, it starts trimming the list, so that next insertions will be more efficient
 
@@ -71,8 +75,10 @@ class SortedList():
         @param n:    The number of elements allowed
     '''  
     def trim(self, n):
-        if n> 0 and len(self.items)> n:
-            self.items = self.items[0:n]
+        
+        if n> 0:
+            for i in range(n, len(self.items)):
+                self.items.pop()
             
     ''' Checks whether the list is empty
         @return:     True iff the list is empty
@@ -129,7 +135,7 @@ def check_constraints(T,Q,N, topics, questions, queries):
     #Checks that the topic id references in the questions list entries are all valid
     for (q_id,t_list) in questions:
         for t_id in t_list:
-            if t_id > T:
+            if not t_id in topics:
                 return False
             
     #Checks the point in the list of queries
@@ -161,7 +167,7 @@ def read_input(f):
     Q = int(Q)
     N = int(N)
 
-    topics = []
+    topics = {}
     questions = []
     queries = []
 
@@ -172,7 +178,7 @@ def read_input(f):
         m = regex.match(line)
         t_id = int(m.group(1))
         (x,y) = map(lambda s: float(s), m.group(2,3))
-        topics.append((t_id, x, y))
+        topics[t_id] = ((t_id, x, y))
    
     #Reads the questions list
     regex = re.compile(INTEGER_RE)
@@ -199,7 +205,7 @@ def read_input(f):
     #Checks that contraints are met - disabled when input is trusted to be well-formed (for example if it has already been checked before passing it over)
     #NOTE: decomment if the input might not be well-formed
     #if not check_constraints(T,Q,N, topics, questions, queries) :       #DEBUG
-    #    raise "Malformed input"                                         #DEBUG
+    #    raise Exception("Malformed input")                                         #DEBUG
   
     return (topics, questions, queries)   
 
@@ -215,7 +221,7 @@ def define_topic_metric((x0,y0)):
                             allows reusability of the same functions in the SortedList class both for topics and questions;
        @return:     The euclidean distance in R^2 between the designated center and the topic.
        '''
-    def metric( (t_id, x,y)):
+    def metric((t_id, x,y)):
         return sqrt((x-x0)**2 + (y-y0)**2)                                     
     
     return metric
@@ -238,8 +244,19 @@ def define_question_metric((x0,y0), topics):
        @return:     The euclidean distance in R^2 between the designated center and the question.       
     '''
     def metric( (q_id, relevant_topics) ):
-        dists = [topic_metric(topic) for topic in [ topics[t_id] for t_id in relevant_topics ]]  
-        return min(dists)   
+        try:
+            dists = [topic_metric(topic) for topic in [ topics[t_id] for t_id in relevant_topics ]]
+        except:
+            dists = [topic_metric(topic) for topic in [ topics[t_id] for t_id in relevant_topics if t_id < len(topics)]]
+                
+            #    for t_id in relevant_topics:
+            #        print t_id, ' -> ' , topics[t_id]
+            #except:
+            #    raise Exception('failed on {} Topics #:  {}' .format( t_id, len(topics)) )
+        if len(dists) > 0:
+            return min(dists)
+        else:
+            return 1e20
     
     return metric
 
@@ -249,14 +266,14 @@ def define_question_metric((x0,y0), topics):
     @param queries:    List of all the queries in the input;
     @return:     A properly formatted string, containing for each query the list of relevant topics' id sorted by ascending distance and descending topic id
 '''
-def process_queries(topics,questions, queries):  
+def process_queries(topics, questions, queries):  
     s = '' 
     for (q_type, n_res, x, y) in queries:
             if q_type.lower()=='t':
                 metric = define_topic_metric((x,y))                   #Distance to the query point of interest
                 queue = SortedList(metric, 0.001, n_res)            #keeps just n_res elements in the list
                 for t in topics:
-                    queue.append(t)
+                    queue.append(topics[t])
                 
                 for it in queue.get_items():
                     s += str(it[0]) + ' '    

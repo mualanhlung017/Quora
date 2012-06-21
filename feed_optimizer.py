@@ -5,8 +5,7 @@
 from math import floor
 import re
 from sys import stdin, stdout, argv
-from copy import deepcopy
-
+#DEBUG    from time import time
 
 
 ''' For convenience, gather all the parameters of a story and make them identifiable
@@ -40,8 +39,11 @@ class Story():
 ''' 
 class Solution():
     
-    def __init__(self, mask, size, score, height):
-        self.mask = deepcopy(mask)
+    def __init__(self, mask, size, score, height, deecpy=False):
+        if deecpy:
+            self.mask = mask[:]
+        else:
+            self.mask = mask
         self.size = size
         self.score = score
         self.height = height
@@ -51,7 +53,7 @@ class Solution():
     The problem space has plenty of local minima, but the algorithm appears performant enough to reach the global minimum even with a few
     cooling steps and mutation cycles for cooling step, resulting quicker than exhaustive start.   
 '''
-class BacktrackingAlgorithm():
+class BackTrackingAlgorithm():
   
     ''' Constructor
         @param full_stories_set:    The set of all the stories available, ordered
@@ -136,7 +138,7 @@ class BacktrackingAlgorithm():
     '''
     def __horowitz_sahni(self):
         mask = [0 for i in range(self.__N)]
-        best_solution = Solution(mask, 0, 0 ,0)
+        best_solution = Solution(mask, 0, 0 ,0, True)
         score = 0
         height = 0
         size = 0 
@@ -154,10 +156,9 @@ class BacktrackingAlgorithm():
                 
                 while pos < self.__N:
                     story = self.__full_stories_set[pos]
-                    residual_capacity = self.__page_height - height
                     
                     #First tries a forward move, if possible
-                    if story._height > residual_capacity:
+                    if story._height > self.__page_height - height:
                         break
                     else:
                         size += 1
@@ -169,9 +170,11 @@ class BacktrackingAlgorithm():
                 if pos < self.__N:
                     #Estimates Dantzig's upper bound
                     story = self.__full_stories_set[pos]
-                    upper_bound = floor(story._scaled_score * (self.__page_height - height))
+                    upper_bound = score + floor(story._scaled_score * (self.__page_height - height))
                     
-                    if best_solution.score > score + upper_bound:
+                    if best_solution.score > upper_bound or (
+                        best_solution.score == upper_bound and
+                         best_solution.size < size):
                         #The forward move would led us to a better solution,
                         #so it performs backtracking
 
@@ -196,7 +199,6 @@ class BacktrackingAlgorithm():
                             size -= 1
                             story = self.__full_stories_set[pos]
                             score -= story._score
-                            residual_capacity += story._height
                             height -= story._height
                             j = pos + 1
                     else:
@@ -214,7 +216,7 @@ class BacktrackingAlgorithm():
             solution = Solution(mask, size, score, height)
             if self.compareSolutions(solution, best_solution) < 0:
                 #Checks current solution
-                best_solution = solution
+                best_solution = Solution(mask, size, score, height, True)
 
             #Tries a backtracking move
             pos = self.__N - 1
@@ -229,7 +231,6 @@ class BacktrackingAlgorithm():
                 size -= 1
                 story = self.__full_stories_set[pos]
                 score -= story._score
-                residual_capacity += story._height
                 height -= story._height
                 j = pos + 1
         
@@ -239,7 +240,17 @@ class BacktrackingAlgorithm():
         then returns the best solution found.
     '''
     def start(self):
+        #Tries trivial solutions first
+        i = 0
+        height = 0
+        while i < self.__N and height <= self.__page_height:
+            height += self.__full_stories_set[i]._height
+            i += 1
+
+        if i == self.__N and height <= self.__page_height:
+            return sum(map(lambda s:s._score,self.__full_stories_set)),  sorted(self.__full_stories_set[:], key=lambda s: s._id )
         
+        #No luck...
         best_solution = self.__horowitz_sahni()
         return best_solution.score, self.__get_subset(best_solution.mask)
 
@@ -302,10 +313,71 @@ def read_input(f):
                 events.append(('R', int(m_reload.group(1))))
             else:
                 #Bad formatted input
-                raise "Bad formatted input!"
+                raise Exception("Bad formatted input!")
 
     return events, W, H
 
+def read_and_process_input(file_in, file_out):
+    line = file_in.readline()
+        
+    regex = re.compile(INTEGER_RE)  #Regular Expression for integers
+    #INVARIANT: the input is assumed well formed and adherent to the specs above
+    [N, W, H]  = regex.findall(line)
+    
+    N = int(N)
+    W = int(W)
+    H = int(H)
+
+    stories_set = []
+
+
+    #Reads the commands list
+    regex_story = re.compile(STORY_RE)
+    regex_reload = re.compile(RELOAD_RE)
+    
+    for i in range(N):
+        line = file_in.readline()
+        m_story = regex_story.match(line)
+        if m_story != None:
+            #INVARIANT: the input is assumed to be well formed
+            #It's a story that must be added to DB
+            story = Story(int(m_story.group(1)), int(m_story.group(2)), int(m_story.group(3)))
+            
+            i = 0
+            while i < len(stories_set) and story._scaled_score < stories_set[i]._scaled_score:
+                    i += 1
+            stories_set.insert(i, story)
+
+        else:
+            m_reload = regex_reload.match(line)
+            if m_reload != None:
+                    #INVARIANT: the input is assumed to be well formed
+                #Prunes the stories too old to be interesting (they won't be considered in the future) 
+                #and the ones to large to fit on the page
+                min_time = int(m_reload.group(1)) - W
+                i = 0
+                while i < len(stories_set):
+                    if (stories_set[i]._time < min_time
+                                  or stories_set[i]._height > H):
+                        stories_set.pop(i)
+                    else:
+                        i += 1
+                #stories_set = [story for story in stories_set
+                #                  if story._time >= min_time
+                #                  and story._height <= page_height ]
+                
+                backtrack = BackTrackingAlgorithm(stories_set, H)
+    
+                score, subset = backtrack.start()
+                
+                result_string = '{} {}'.format(score, len(subset))
+                for story in subset:
+                    result_string += ' {}'.format(story._id)
+                
+                file_out.write(result_string+'\n')
+
+    file_in.close()
+    file_out.close()
 
 ''' Main flow of the program.
     Reads the input from the input file (stdin by default), collects every command
@@ -316,13 +388,19 @@ def read_input(f):
     @param file_out:    The file on which the output should be written;
 '''
 def main_handler(file_in, file_out):
+#DEBUG    start_time = time()
 
     results_set = []
     stories_set = []
       
     events_set, time_window, page_height = read_input(file_in)
 
-    for event in events_set:        
+#DEBUG    counter = 0
+    for event in events_set:
+#DEBUG        counter += 1
+#DEBUG        if time()-start_time > 15:
+#DEBUG            raise Exception('Execution is not in deadlock, just slow', 'Command {} out of {} '.format(counter, len(events_set)))
+                
         if event[0] == 'S':
             #It's a story that must be added to DB
             story = Story(event[1], event[2], event[3])
@@ -336,11 +414,18 @@ def main_handler(file_in, file_out):
             #Prunes the stories too old to be interesting (they won't be considered in the future) 
             #and the ones to large to fit on the page
             min_time = event[1] - time_window
-            stories_set = [story for story in stories_set
-                              if story._time >= min_time
-                              and story._height <= page_height ]
+            i = 0
+            while i < len(stories_set):
+                if (stories_set[i]._time < min_time
+                              or stories_set[i]._height > page_height):
+                    stories_set.pop(i)
+                else:
+                    i += 1
+            #stories_set = [story for story in stories_set
+            #                  if story._time >= min_time
+            #                  and story._height <= page_height ]
             
-            backtrack = BacktrackingAlgorithm(stories_set, page_height)
+            backtrack = BackTrackingAlgorithm(stories_set, page_height)
 
             score, subset = backtrack.start()
             
@@ -396,4 +481,5 @@ if __name__ == '__main__':
                 print 'The requested file: {} does not exist. Output will be redirected to stdout.'.format(argv[i])
                 file_out = stdout
     
-    main_handler(file_in, file_out)
+    #main_handler(file_in, file_out)
+    read_and_process_input(file_in, file_out)

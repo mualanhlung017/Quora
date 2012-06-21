@@ -24,11 +24,11 @@ public class TypeaheadSearch {
 														// negative integer
 	private static final String INTEGER_GROUP_RE = "(" + INTEGER_RE + ")"; // Group
 																			// version
-	private static final String FLOAT_RE = "[0-9]+.[0-9]*"; // INVARIANT: always
+	private static final String FLOAT_RE = "[0-9]+(?:.[0-9]*)?"; // INVARIANT: always
 															// positive
 	private static final String FLOAT_GROUP_RE = "(" + FLOAT_RE + ")"; // Group
 																		// version
-	private static final String ID_RE = "[A-Za-z]+\\w*"; // NOTE: we assume that
+	private static final String ID_RE = "\\w+"; // NOTE: we assume that
 															// an ID must start
 															// with a letter,
 															// and can be
@@ -40,7 +40,7 @@ public class TypeaheadSearch {
 																	// version
 	private static final String SEPARATOR_RE = "(?: |\\t)"; // We consider just spaces
 													// as separators
-	private static final String STRING_GROUP_RE = "(\\S+.*)"; // Strings starts
+	private static final String STRING_GROUP_RE = "(\\S*.*)"; // Strings starts
 																// with a char
 																// and can have
 																// spaces
@@ -100,8 +100,8 @@ public class TypeaheadSearch {
 
 	
 	// DB and Output are stored as vectors
-	private static final Vector<Item> records = new Vector<>();
-	private static final Vector<String> output = new Vector<>();
+	private static final Vector<Item> records = new Vector<Item>();
+	private static final Vector<String> output = new Vector<String>();
 	// The collected while commands are inserted from stdin but printed
 	// only once all commands have been completed
 
@@ -141,23 +141,15 @@ public class TypeaheadSearch {
 			}
 			command = commandMatcher.group(1);
 
-			switch (command) {
-			case "ADD":
+			if (command.equals("ADD")) {
 				processAddCommand(inputLine);
-				break;
-			case "DEL":
+			}else if (command.equals("DEL")) {
 				processDelCommand(inputLine);
-				break;
-			case "QUERY":
+			}else if (command.equals("QUERY")) {
 				output.add(processQueryCommand(inputLine));
-				break;
-			case "WQUERY":
+			}else if (command.equals("WQUERY")) {
 				output.add(processWQueryCommand(inputLine));
-				break;
-			default:
-				continue;
 			}
-
 			// WARNING: An empty line or Ctrl-Z terminates the program without
 			// producing any output!!!
 		}
@@ -193,7 +185,8 @@ public class TypeaheadSearch {
 		if (!commandMatcher.matches()) { // Additional check (redundant assuming the input is
 							// well formatted)
 			throw new Error(
-					"Bad formatted input: please check the challenge specifications for ADD commands");
+					"Bad formatted input: please check the challenge specifications for ADD commands"+
+					"\n"+addCommand+"\n");
 		}
 
 		String type = commandMatcher.group(1);
@@ -267,7 +260,7 @@ public class TypeaheadSearch {
 		String data;
 		Boolean match;
 
-		SortedVector<Item> resultsVector = new SortedVector<>();
+		SortedVector<Item> resultsVector = new SortedVector<Item>();
 		resultsVector.setMaxSize(numberOfResults);
 
 		for (Item item : records) {
@@ -325,8 +318,8 @@ public class TypeaheadSearch {
 
 		Matcher commandMatcher = pWQueryCommand.matcher(wqueryCommand);
 		Matcher boostMatcher;
-		Vector<Boost> vo_type_boosts = new Vector<>();
-		Vector<Boost> vo_id_boosts = new Vector<>();
+		Vector<Boost> vo_type_boosts = new Vector<Boost>();
+		Vector<Boost> vo_id_boosts = new Vector<Boost>();
 
 		if (!commandMatcher.matches()) { // Additional check (redundant assuming the
 									// input is well formatted)
@@ -395,7 +388,7 @@ public class TypeaheadSearch {
 		Boolean match;
 
 		// Perform the query
-		SortedVector<Item> resultsVector = new SortedVector<>();
+		SortedVector<Item> resultsVector = new SortedVector<Item>();
 		resultsVector.setMaxSize(numberOfResults);
 		for (Item item : records) {
 			data = item.getData();
