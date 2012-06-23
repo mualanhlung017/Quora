@@ -4,7 +4,7 @@
 
 from math import floor
 import re
-from sys import stdin, stdout, argv
+from sys import stdin, stdout
 #DEBUG    from time import time
 
 
@@ -35,19 +35,6 @@ class Story():
 
 
  
-''' Convenience class for a solution
-''' 
-class Solution():
-    
-    def __init__(self, mask, size, score, height, deecpy=False):
-        if deecpy:
-            self.mask = mask[:]
-        else:
-            self.mask = mask
-        self.size = size
-        self.score = score
-        self.height = height
- 
 ''' Simulated Annealing Algorithm class.
     Exposes a method that performs simulated annealing on a dictionary (passed upon instance construction) to find an optimal stepladder.
     The problem space has plenty of local minima, but the algorithm appears performant enough to reach the global minimum even with a few
@@ -73,17 +60,19 @@ class BackTrackingAlgorithm():
         @param mask: A binary mask corresponding to a subset of the stories
         @return: The corresponding list of ids.
     '''
-    def __get_subset(self, mask):
+    @staticmethod
+    def __get_subset(stories_set, mask):
         #INVARIANT: len(__full_stories_set) == len(self.__chromosome):
-        return sorted([self.__full_stories_set[i] for i in range(len(mask)) if mask[i]], key=lambda s: s._id )
+        return [stories_set[i] for i in range(len(mask)) if mask[i]]
 
     ''' Returns the list of the ids of the stories corresponding to ones in the mask; 
         @param mask: A binary mask corresponding to a subset of the stories:
         @return: The corresponding list of ids.
     '''
-    def __get_subset_ids(self, mask):
+    @staticmethod
+    def __get_subset_ids(stories_set, mask):
         #INVARIANT: len(__full_stories_set) == len(self.__chromosome):
-        return [self.__full_stories_set[i]._id for i in range(len(mask)) if mask[i]]
+        return [stories_set[i]._id for i in range(len(mask)) if mask[i]]
 
 
     ''' Compares two solutions according to the specifications;
@@ -96,21 +85,24 @@ class BackTrackingAlgorithm():
         @return:    -1 <=> solution_1 is a better solution than solution_2, or it is equal to solution_2
                     1 <=> vice versa.
     '''
-    def compareSolutions(self, solution_1, solution_2):
+    @staticmethod
+    def __compareSolutions(stories_set,
+                           solution_1_score, solution_1_size, solution_1_mask,
+                           solution_2_score, solution_2_size, solution_2_mask):
         
         #INVARIANT: all solutions tested are valid
-        if solution_1.score > solution_2.score:
+        if solution_1_score > solution_2_score:
             return -1
-        elif solution_1.score < solution_2.score:
+        elif solution_1_score < solution_2_score:
             return 1
         else:
-            if solution_1.size < solution_2.size:
+            if solution_1_size < solution_2_size:
                 return -1
-            elif solution_1.size > solution_2.size:
+            elif solution_1_size > solution_2_size:
                 return 1
             else:
-                stories_ids_1 = sorted(self.__get_subset_ids(solution_1.mask))
-                stories_ids_2 = sorted(self.__get_subset_ids(solution_2.mask))
+                stories_ids_1 = sorted(BackTrackingAlgorithm.__get_subset_ids(stories_set, solution_1_mask))
+                stories_ids_2 = sorted(BackTrackingAlgorithm.__get_subset_ids(stories_set, solution_2_mask))
                 if stories_ids_1 <= stories_ids_2:
                     return -1
                 else:
@@ -136,16 +128,17 @@ class BackTrackingAlgorithm():
         @param height:    Total height for the curent solution;
         @param pos:    The index of the new element to examine;
     '''
-    def __horowitz_sahni(self):
-        mask = [0 for i in range(self.__N)]
-        best_solution = Solution(mask, 0, 0 ,0, True)
-        score = 0
-        height = 0
-        size = 0 
+    @staticmethod
+    def __horowitz_sahni(stories_set, N, c):
+        mask = [0] * N
+        best_solution_mask = mask[:]
+        best_solution_size = size = 0
+        best_solution_score = score = 0
+        best_solution_height = height = 0        
         
         j = 0
         while True:
-            while j < self.__N:
+            while j < N:
                 
                 #Tries a forward move        
                 pos = j
@@ -154,11 +147,11 @@ class BackTrackingAlgorithm():
                 initial_heigh = height
                 initial_size = size
                 
-                while pos < self.__N:
-                    story = self.__full_stories_set[pos]
+                while pos < N:
+                    story = stories_set[pos]
                     
                     #First tries a forward move, if possible
-                    if story._height > self.__page_height - height:
+                    if story._height > c - height:
                         break
                     else:
                         size += 1
@@ -167,14 +160,14 @@ class BackTrackingAlgorithm():
                         height += story._height
                         pos += 1
 
-                if pos < self.__N:
+                if pos < N:
                     #Estimates Dantzig's upper bound
-                    story = self.__full_stories_set[pos]
-                    upper_bound = score + floor(story._scaled_score * (self.__page_height - height))
+                    story = stories_set[pos]
+                    upper_bound = score + floor(story._scaled_score * (c - height))
                     
-                    if best_solution.score > upper_bound or (
-                        best_solution.score == upper_bound and
-                         best_solution.size < size):
+                    if best_solution_score > upper_bound or (
+                        best_solution_score == upper_bound and
+                         best_solution_size < size):
                         #The forward move would led us to a better solution,
                         #so it performs backtracking
 
@@ -192,12 +185,12 @@ class BackTrackingAlgorithm():
                             pos -= 1
                         if pos < 0:
                             #No more backtracking possible
-                            return best_solution
+                            return best_solution_score, best_solution_height, best_solution_mask
                         else:
                             #Exclude the element from the knapsack
                             mask[pos] = 0
                             size -= 1
-                            story = self.__full_stories_set[pos]
+                            story = stories_set[pos]
                             score -= story._score
                             height -= story._height
                             j = pos + 1
@@ -213,47 +206,41 @@ class BackTrackingAlgorithm():
                     
             #INVARIANT: j == self.__N:
             #Completed one "depth first search" visit in the solution space tree.
-            solution = Solution(mask, size, score, height)
-            if self.compareSolutions(solution, best_solution) < 0:
+            if BackTrackingAlgorithm.__compareSolutions(stories_set,
+                                                        score, size, mask,
+                                                        best_solution_score,
+                                                        best_solution_size,
+                                                        best_solution_mask
+                                                        ) < 0:
                 #Checks current solution
-                best_solution = Solution(mask, size, score, height, True)
+                best_solution_mask = mask[:]
+                best_solution_size = size
+                best_solution_height = height
+                best_solution_score = score
 
             #Tries a backtracking move
-            pos = self.__N - 1
+            pos = N - 1
             while pos >= 0 and mask[pos] == 0:
                 pos -= 1
             if pos < 0:
                 #No more backtracking possible
-                return best_solution
+                return best_solution_score, best_solution_height, best_solution_mask
             else:
                 #Exclude the element from the knapsack
                 mask[pos] = 0
                 size -= 1
-                story = self.__full_stories_set[pos]
+                story = stories_set[pos]
                 score -= story._score
                 height -= story._height
                 j = pos + 1
-        
-        
-                    
+
+    
     ''' Shorthand: Performs the Horowitz-Sahni algorithms on the input, and
         then returns the best solution found.
     '''
     def start(self):
-        #Tries trivial solutions first
-        i = 0
-        height = 0
-        while i < self.__N and height <= self.__page_height:
-            height += self.__full_stories_set[i]._height
-            i += 1
-
-        if i == self.__N and height <= self.__page_height:
-            return sum(map(lambda s:s._score,self.__full_stories_set)),  sorted(self.__full_stories_set[:], key=lambda s: s._id )
-        
-        #No luck...
-        best_solution = self.__horowitz_sahni()
-        return best_solution.score, self.__get_subset(best_solution.mask)
-
+        best_solution_score, best_solution_height, best_solution_mask = BackTrackingAlgorithm.__horowitz_sahni(self.__full_stories_set, self.__N, self.__page_height)
+        return best_solution_score, best_solution_height, sorted(BackTrackingAlgorithm.__get_subset_ids(self.__full_stories_set, best_solution_mask))
 
         
 '''REGULAR EXPRESSIONS'''
@@ -317,6 +304,14 @@ def read_input(f):
 
     return events, W, H
 
+''' Main flow of the program.
+    Reads the input from the input file (stdin by default), collects every command
+    in a separate element of a list, and then executes them one by one.
+    For every reload command, runs the Horowitz-Sahni backtracking algorithm.
+    
+    @param file_in:    The file from which to read the input;
+    @param file_out:    The file on which the output should be written;
+'''
 def read_and_process_input(file_in, file_out):
     line = file_in.readline()
         
@@ -329,24 +324,37 @@ def read_and_process_input(file_in, file_out):
     H = int(H)
 
     stories_set = []
-
+    last_solution = None
 
     #Reads the commands list
     regex_story = re.compile(STORY_RE)
     regex_reload = re.compile(RELOAD_RE)
     
+    insert = stories_set.insert     #Optimization
     for i in range(N):
         line = file_in.readline()
         m_story = regex_story.match(line)
         if m_story != None:
             #INVARIANT: the input is assumed to be well formed
             #It's a story that must be added to DB
+            
             story = Story(int(m_story.group(1)), int(m_story.group(2)), int(m_story.group(3)))
             
-            i = 0
-            while i < len(stories_set) and story._scaled_score < stories_set[i]._scaled_score:
-                    i += 1
-            stories_set.insert(i, story)
+            if story._height <= H:
+                # If the new story can be added without crossing the limit, then it belongs to the best solution
+                if last_solution != None:
+                    if last_solution[1] + story._height <= H:
+                        last_solution[2].append(story._id)
+                        last_solution = (last_solution[0] + story._score, 
+                                         last_solution[1] + story._height, 
+                                         last_solution[2])
+                    else:
+                        last_solution = None
+                #Inserts the story in the stories set
+                i = 0
+                while i < len(stories_set) and story._scaled_score < stories_set[i]._scaled_score:
+                        i += 1
+                insert(i, story)
 
         else:
             m_reload = regex_reload.match(line)
@@ -355,131 +363,57 @@ def read_and_process_input(file_in, file_out):
                 #Prunes the stories too old to be interesting (they won't be considered in the future) 
                 #and the ones to large to fit on the page
                 min_time = int(m_reload.group(1)) - W
-                i = 0
-                while i < len(stories_set):
-                    if (stories_set[i]._time < min_time
-                                  or stories_set[i]._height > H):
-                        stories_set.pop(i)
-                    else:
-                        i += 1
+                if last_solution != None: 
+                    i = 0
+                    subset = last_solution[2]
+                    while i < len(stories_set):
+                        if (stories_set[i]._time < min_time):
+                            if stories_set[i]._id in subset:
+                                #If the story that became too old didn't belong to the best solution, then nothing changes
+                                #Otherwise the old solution is no longer valid
+                                last_solution = None
+                            stories_set.pop(i)
+                        else:
+                            i += 1
+                else:
+                    i = 0
+                    while i < len(stories_set):
+                        if (stories_set[i]._time < min_time):
+                            stories_set.pop(i)
+                        else:
+                            i += 1
+                    
                 #stories_set = [story for story in stories_set
                 #                  if story._time >= min_time
                 #                  and story._height <= page_height ]
-                
-                backtrack = BackTrackingAlgorithm(stories_set, H)
-    
-                score, subset = backtrack.start()
+                if last_solution == None:
+                    backtrack = BackTrackingAlgorithm(stories_set, H)
+                    last_solution = backtrack.start()
+
+                score = last_solution[0]
+                subset = last_solution[2]
                 
                 result_string = '{} {}'.format(score, len(subset))
-                for story in subset:
-                    result_string += ' {}'.format(story._id)
+                for story_id in subset:
+                    result_string += ' {}'.format(story_id)
                 
                 file_out.write(result_string+'\n')
 
     file_in.close()
     file_out.close()
 
-''' Main flow of the program.
-    Reads the input from the input file (stdin by default), collects every command
-    in a separate element of a list, and then executes them one by one.
-    For every reload command, runs the Horowitz-Sahni backtracking algorithm.
-    
-    @param file_in:    The file from which to read the input;
-    @param file_out:    The file on which the output should be written;
-'''
-def main_handler(file_in, file_out):
-#DEBUG    start_time = time()
-
-    results_set = []
-    stories_set = []
-      
-    events_set, time_window, page_height = read_input(file_in)
-
-#DEBUG    counter = 0
-    for event in events_set:
-#DEBUG        counter += 1
-#DEBUG        if time()-start_time > 15:
-#DEBUG            raise Exception('Execution is not in deadlock, just slow', 'Command {} out of {} '.format(counter, len(events_set)))
-                
-        if event[0] == 'S':
-            #It's a story that must be added to DB
-            story = Story(event[1], event[2], event[3])
-            
-            i = 0
-            while i < len(stories_set) and story._scaled_score < stories_set[i]._scaled_score:
-                    i += 1
-            stories_set.insert(i, story)
-            #sorted(full_stories_set, key=lambda s:float(s._score)/s._height, reverse=True)
-        elif event[0] == 'R':
-            #Prunes the stories too old to be interesting (they won't be considered in the future) 
-            #and the ones to large to fit on the page
-            min_time = event[1] - time_window
-            i = 0
-            while i < len(stories_set):
-                if (stories_set[i]._time < min_time
-                              or stories_set[i]._height > page_height):
-                    stories_set.pop(i)
-                else:
-                    i += 1
-            #stories_set = [story for story in stories_set
-            #                  if story._time >= min_time
-            #                  and story._height <= page_height ]
-            
-            backtrack = BackTrackingAlgorithm(stories_set, page_height)
-
-            score, subset = backtrack.start()
-            
-            result_string = '{} {}'.format(score, len(subset))
-            for story in subset:
-                result_string += ' {}'.format(story._id)
-            results_set.append(result_string+'\n')
-                 
-    file_out.writelines(results_set)
-        
-    file_in.close()
-    file_out.close()
-
- 
- 
  
 ''' Main.
     Interpret the command line parameters, if any, and then gives the control to
     the "real" main.
     
-    USAGE:
-    -f filename: Reads input from a file [by default it reads input from stdin]
-    -o filename: Writes output to a file [by default it writes output on stdout]
 '''
 if __name__ == '__main__':
     
-    DEFAULT_TIME_LIMIT = 4.5
-    
     file_in = stdin
     file_out = stdout
-        
-    for i in range(1, len(argv)):
-        if (argv[i] == '-f'):
-            i += 1
-            if i >= len(argv):
-                print 'Error using option -f: filename required'
-                break
-            try:
-                #Takes the second parameter
-                file_in = open(argv[i], 'r')
-            except:
-                print 'The requested file: {} does not exist. Please insert your input from the terminal.'.format(argv[i])
-                file_in = stdin
-        if (argv[i] == '-o'):
-            i += 1
-            if i >= len(argv):
-                print 'Error using option -o: filename required'
-                break
-            try:
-                #Takes the second parameter
-                file_out = open(argv[i], 'w')
-            except:
-                print 'The requested file: {} does not exist. Output will be redirected to stdout.'.format(argv[i])
-                file_out = stdout
     
-    #main_handler(file_in, file_out)
+    file_in = open('feed.txt','r')
+    file_out = open('f_test.txt','w')
+
     read_and_process_input(file_in, file_out)
