@@ -1,6 +1,4 @@
 '''
-Created on 28/mag/2012
-
 @author: mlarocca02
 '''
 from string import upper
@@ -9,6 +7,7 @@ from sys import stdin, argv
 from time import time
 from random import randrange, random, seed
 from math import e
+from copy import deepcopy
 
 INTEGER_RE = "(\d+)"            #Regular expression: Matches any non negative integer
 STRING_RE = "([A-Z]+)"          #Regular expression: Matches a string of uppercase char only
@@ -18,6 +17,13 @@ POINTS = {'A':1, 'E':1, 'I':1, 'L':1, 'N':1, 'O':1, 'R':1, 'S':1, 'T':1, 'U':1,
           'D':2, 'G':2, 'B':3, 'C':3, 'M':3, 'P':3, 'F':4, 'H':4, 'V':4, 'W':4,
           'Y':4, 'K':5, 'J':8, 'X':8, 'Q':10, 'Z':10}
 
+
+''' Represents a lexical Dictionary, i.e. a collection of
+    all the admissible words.
+    Provides attributes and methods to handle all the required operations,
+    like filtering, computing word distance and neighborhood, and
+    computing scores.
+'''
 class Dictionary():
     
     ''' Constructor:    inits the attributes of this class
@@ -144,7 +150,7 @@ class Dictionary():
 ''' Simulated Annealing Algorithm class.
     Exposes a method that performs simulated annealing on a dictionary (passed upon instance construction) to find an optimal stepladder.
     The problem space has plenty of local minima, but the algorithm appears performant enough to reach the global minimum even with a few
-    cooling steps and mutation cycles for cooling step, resulting quicker than exhaustive backtracking.   
+    cooling steps and mutation cycles for cooling step, resulting quicker than exhaustive start.   
 '''
 class AnnealingAlgorithm():
     
@@ -167,9 +173,11 @@ class AnnealingAlgorithm():
     ''' Constructor
         @param D:    The dictionary from were words can be drafted.
     '''
-    def __init__(self, D):
+    def __init__(self, D, word_length):
         seed(time())
-        self.dictionary = D
+        self.dictionary = deepcopy(D)
+        #Leaves only the words with length word_length
+        self.dictionary.filter_words_by_length(word_length)
         
         return
 
@@ -235,7 +243,7 @@ class AnnealingAlgorithm():
        until there is no other possible couple to add;
        @return:    A valid stepladder (provided that the dictionary isn't empty)       
     '''    
-    def __random_solution(self):
+    def __initial_solution(self):
         #Implements a non uniform random picker, with probability proportional to each dictionary word's score
         t = sum([self.dictionary.scores[w] for w in self.dictionary.dictionary])
         pick = randrange(t)
@@ -300,7 +308,7 @@ class AnnealingAlgorithm():
         #Randomly select one position
         n = len(new_solution)
         i = randrange( 0, n )
-#                        if AnnealingAlgorithm.TRACE_OUTPUT:
+#                        if BackTrackingAlgorithm.TRACE_OUTPUT:
 #                            print  "swap WIN %d value %f  temp=%f i=%d j=%d\n" % (i1, current_value,temperature,i,j)    
         #Edge cases
         if i==0:
@@ -579,15 +587,10 @@ class AnnealingAlgorithm():
         
         temperature = AnnealingAlgorithm.__INITIAL_TEMPERATURE
     
-        solution = self.__random_solution()
+        solution = self.__initial_solution()
         best_solution = solution[:]
         best_value = current_value = self.__stepladder_score(solution)
         
-        #DEBUG:
-        #DEBUG:    count_m1 = 0
-        #DEBUG:    count_m3 = 0.
-        #DEBUG:    tot_m1 = 0.
-        #DEBUG:    tot_m3 = 0.
         for i in range(AnnealingAlgorithm.__COOLING_STEPS):
             temperature *= AnnealingAlgorithm.__COOLING_FRACTION
             start_value = current_value
@@ -596,49 +599,31 @@ class AnnealingAlgorithm():
                 for mutation in [lambda sol: self.__mutation_2(self.__mutation_1(sol)),
                                             self.__mutation_3]:               
                     new_solution = mutation(solution)
-#                    new_solution = solution
-                        
-                    #DEBUG:    
-                    #DEBUG:    if not self.__stepladder_check_and_score(new_solution): raise "Error" #Solution should be always valid for construction, so no need to waste time checking
+
                     new_value = self.__stepladder_score(new_solution)
                     delta = new_value - current_value
-        #            print "Step {0}: Cost = {1} Current = {2}  ".format(solutionCount, solution.solutionCost(), current_value)
+
                     if delta==0:
                         continue
-                    #DEBUG:
-                    #DEBUG:    if (mutation == self.__mutation_3):
-                    #DEBUG:        if delta > 0:
-                    #DEBUG:            count_m3 += 1
-                    #DEBUG:            tot_m3 += 1
-                    #DEBUG:        else:
-                    #DEBUG:            tot_m3 += 1
-                    #DEBUG:    else:
-                    #DEBUG:        if delta > 0:
-                    #DEBUG:            count_m1 += 1    
-                    #DEBUG:            tot_m1 += 1
-                    #DEBUG:        else:
-                    #DEBUG:            tot_m1 += 1                                
                                             
                     flip = random()
-                    exponent = float(delta/new_value)*K/temperature
+                    exponent = float(delta/new_value)*AnnealingAlgorithm.K/temperature
                     merit = e ** exponent
     
-                    if delta > 0 : # ACCEPT-WIN*/
+                    if delta > 0 : # ACCEPT-WIN
                         solution = new_solution[:]
                         current_value = new_value
                         if current_value > best_value:
                             best_value = current_value
                             best_solution = solution[:]
                             
-                    elif merit > flip :  #ACCEPT-LOSS*/
+                    elif merit > flip :  #ACCEPT-LOSS
                         solution = new_solution[:]
                         current_value = new_value
     
-            if  (current_value-start_value) > 0.0 : # rerun at this temp */
+            if  (current_value-start_value) > 0.0 : # rerun at this temp
                 temperature /= AnnealingAlgorithm.__COOLING_FRACTION
     
-        #DEBUG:    print 'M1 ', count_m1/tot_m1
-        #DEBUG:    print 'M3 ', count_m3, ' out of ', tot_m3
         return (best_value, best_solution)
 
     '''Simulated annealing main: until all the allotted time has been used, keeps restarting
@@ -647,40 +632,42 @@ class AnnealingAlgorithm():
        @return: (best_score, best_solution)
                The best solution found by simulated annealing, and its score.
     '''
-    def simulated_annealing(self,max_time):
+    def start(self, max_time):
     
-            start_time = time()
-            best_solution = None
-            best_score = 0
-            
-            
-            #Continues until the execution exeeded the allotted time
-            while time() < start_time + max_time:
-                    (score, solution) = self.__annealing()
-                    #DEBUG:
-#                    if score != self.stepladder_check_and_score(solution):
-#                        print score, solution, self.stepladder_check_and_score(solution)
-#                        raise "Errore  nel calcolo costi"
-                    if score > best_score:
-                        best_solution = solution[:]
-                        best_score = score
-                    #if (cost_now < best_cost):
-                    #        best_cost = cost_now
-                    #        bestsol = solution
-    
-            return (best_score, best_solution)
+        ''' Checks that at least one word is saved in the dictionary
+            (otherwise, no valid stepladder can be created).
+            INVARIANT:  word length filter has already been applied to the
+                        dictionary.
+        '''
+        if len(self.dictionary.dictionary) == 0:
+            return 0, []
+        
+        start_time = time()
+        best_solution = None
+        best_score = 0
+
+        #Continues until the execution exceeded the allotted time
+        while time() < start_time + max_time:
+                (score, solution) = self.__annealing()
+                if score > best_score:
+                    best_solution = solution[:]
+                    best_score = score
+
+        return (best_score, best_solution)
 
 ''' Backtracking handler class.
-    Exposes a highest_score_stepladder method that, once the class is initialized with a proper dictionary, perform backtracking on
+    Exposes a highest_score_stepladder method that, once the class is initialized with a proper dictionary, perform start on
     the word contained in that dictionary in order to find the highest score possible stepladder.
 '''
-class BacktrackingAlgorithm():
+class BackTrackingAlgorithm():
 
     '''Constructor
     '''
-    def __init__(self, D):
-        self.dictionary = D
-
+    def __init__(self, D, word_length):
+        self.dictionary = deepcopy(D)
+        #Leaves only the words with length word_length
+        self.dictionary.filter_words_by_length(word_length)
+        
     ''' Backtracking: tries to add every legal couple of words at the extremes of the stepladder, and then calls itself recursively
         to try to further extend the ladder.
         @param ladder:    A valid stepladder
@@ -715,13 +702,13 @@ class BacktrackingAlgorithm():
                  
         
     '''For each word in the dictionary, inits a stepladder with that word as the central word, and then starts
-       the backtracking to find couple of elements to put around it
+       the start to find couple of elements to put around it
     '''
     def highest_score_stepladder(self):
         best_score = 0
         best_ladder = []
         for w in dictionary.dictionary:
-            #score = backtracking([w], (w, w), scores[w])
+            #score = start([w], (w, w), scores[w])
             (score, ladder) = self.__backtracking([w], (w, w), self.dictionary.scores[w])
             if (score>best_score):
                 best_ladder = ladder[:]
@@ -742,6 +729,7 @@ class BacktrackingAlgorithm():
 if __name__ == '__main__':
    
     annealing_mode = False
+    annealing_time = 5
     verbose_mode = False
     file_in = stdin
    
@@ -777,31 +765,18 @@ if __name__ == '__main__':
     if file_in!=stdin:
         file_in.close()
     
-    #Leaves only the words with length K
-    dictionary.filter_words_by_length(K)
     if verbose_mode:
         print 'Dictionary:'
         print [(w,dictionary.scores[w]) for w in dictionary.dictionary ]
     
     dictionary.compute_neighbours_list()
     
-    if annealing_mode:
-        #Simulated annealing:
-        annealingHandler = AnnealingAlgorithm(dictionary)
-        (best_score, best_ladder) = annealingHandler.simulated_annealing(annealing_time)        
-        if verbose_mode:
-            print 'Simulated annealing: best solution found in {} seconds has score: {}'.format(annealing_time, best_score)
-            print best_ladder
-        else:
-            print best_score
-    else: 
     
-        backtracking = BacktrackingAlgorithm(dictionary)
-        (best_score, best_ladder)  = backtracking.highest_score_stepladder()
-        if verbose_mode:
-            print 'Backtracking solution score: {}'.format(best_score)
-            print best_ladder
-        else:
-            print best_score
-    
-
+    #Simulated annealing:
+    annealingHandler = AnnealingAlgorithm(dictionary, K)
+    (best_score, best_ladder) = annealingHandler.start(annealing_time)        
+    if verbose_mode:
+        print 'Simulated annealing: best solution found in {} seconds has score: {}'.format(annealing_time, best_score)
+        print best_ladder
+    else:
+        print best_score
