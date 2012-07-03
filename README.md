@@ -3,17 +3,34 @@ An elegant, easy to read and fully commented version, and an optimized version, 
 
 
 1.: nearby (Python)
+	a)	R-trees version (file nearby_rtree.py)
+		The right data structure is often crucial to achieve good performance, and for spatial queries the right DS are R-trees or Voronoi Diagrams (or their duals, Delauney triangulation graphs).
+		I decided to go with R-trees, and in particular with a special kind of them, the SS-trees, that uses spheres instead of rectangles to bound points and are therefore
+		more intuitive and more versed for spatial vicinity queries.
+		In an SS-tree each node is either an intermediate node, a leaf or a feature vecture (i.e. a point in space); only leafs contain actual points from the space and
+		leafs and intermediate nodes represents spheres surrounding all the points in their subtrees. Since R-trees are an extension of b-trees, all the leafs are on the same level,
+		and each intermediate node but the root has from t to 2t-1 children (actually in my implementation it's form t to 2*t).
+		
+		First I build an SS-tree of the topics set, allowing at most 16 points for each leaf and splitting nodes along x or y directiong according to which one presents the highest variance.
+		
+		The topic queries are simply k-nearest neighbours search on the topics tree, where all the topics encountered are pushed in a bounded max-heap which holds at most n_res distances
+        (the n_res smallest ones) so that, once the heap is full, its first element is the kth distance discovered so far, and this value can be used to prune the search on the SS-tree.
+       
+		For question queries, instead, starts a k-nearest neighbours search for the query point, but for each topics encounterd checks the queries for which the topic is relevant and for each of this queries checks if other closer relevant topics have been already found or not.
+		When at list k different questions have been met, starts comparing the distance from the query point of farthest one to the distances (from the query point) of the SS-tree nodes' borders, pruning the search on the nodes too far away.
 
-I decided to use an approach where I create a sorted list of the best topics for every query, because it looked more efficient:
-Suppose we have T topics, Q questions, and N queries;
-If the query is about a topic (t-type query), and we were to compute the distance of each topic's point from the query's center, and then sort the
-topics based on this distance and take the first k (where k is the second parameter of the query), then it would require time
-proportional to O(T + T*log T + k) = O(T*log T), since k<=T and provided we can compute the distance in constant time.
-If, instead, we keep a list of the best k topics, and insert each topic we examine in this ordered list, each step is bounded by
-O(log(k) + k) where O(log k) is needed to find the place to insert the new element and O(k) is a (large!) bound for the elements shift
-needed to insert an element in the middle of a sorted array of size k; for each query it is then required time proportional to O(T*k);
-If k<<T, being k constant, the total amount of time needed is O(T), while if k is close to T, the bound becomes O(T**2).
-Since by definition of the problem k<=10, the bound becomes O(10*T) = O(T) < O(T*log T), so the latter solution is to prefer.
+	b)	Original approach (file nearby.py and nearby_fast.py for the optimized version, twice as fast but not as readable)
+	
+		I decided to use an approach where I create a sorted list of the best topics for every query, because it looked more efficient:
+		Suppose we have T topics, Q questions, and N queries;
+		If the query is about a topic (t-type query), and we were to compute the distance of each topic's point from the query's center, and then sort the
+		topics based on this distance and take the first k (where k is the second parameter of the query), then it would require time
+		proportional to O(T + T*log T + k) = O(T*log T), since k<=T and provided we can compute the distance in constant time.
+		If, instead, we keep a list of the best k topics, and insert each topic we examine in this ordered list, each step is bounded by
+		O(log(k) + k) where O(log k) is needed to find the place to insert the new element and O(k) is a (large!) bound for the elements shift
+		needed to insert an element in the middle of a sorted array of size k; for each query it is then required time proportional to O(T*k);
+		If k<<T, being k constant, the total amount of time needed is O(T), while if k is close to T, the bound becomes O(T**2).
+		Since by definition of the problem k<=10, the bound becomes O(10*T) = O(T) < O(T*log T), so the latter solution is to prefer.
 
 For q-type queries, the function to compute the distance requires to compute the distances of all the topics related to a question, 
 and then take the min value; for a question with Qn topic references then, supposing the distance can be computed in constant time O(c),
@@ -75,3 +92,5 @@ I use backtracking with 2 pruning heuristics:
 Checks that every not yet visited cell can be reached from the current configuration;
 Checks that the goal cell can be reached from the current configuration.
 The first heuristic alone gave an improvement of a factor 20 in comparison to naive backtracking, adding the second gave another factor 3, and then some code tuning allowed to cut a few more seconds.
+23/06/2012:	Added a third heuristics that looks for culs-de-sac, i.e. free rooms surrounded on 3 sides by walls, busy rooms or rooms already used on the path: this gives an improvent of a factor 5 (under 5 seconds!).
+			A little extra optimization bought it another second (less than 4 secs of total runtime).
