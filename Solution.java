@@ -1,10 +1,11 @@
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
-import java.io.PrintStream;
+//import java.io.PrintStream;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.HashMap;
+//import java.util.HashMap;
+import java.util.HashSet;
 import java.util.regex.Pattern;
 import java.util.regex.Matcher;
 
@@ -100,9 +101,13 @@ public class Solution {
 
 	
 	// DB and Output are stored as vectors
-	private static final ArrayList<Item> records = new ArrayList<Item>();
-	private static final ArrayList<String> output = new ArrayList<String>();
-	
+//	private static final PrefixTree prefixTree = new PrefixTree();
+	private static final PatriciaTree prefixTree = new PatriciaTree();
+	private static final Trie keyTrie = new Trie();
+//	private static HashMap<String, Item> recordsMap;
+
+	private static final ArrayList<Boost> typeBoosts = new ArrayList<Boost>(26);
+	private static final ArrayList<Boost> idBoosts = new ArrayList<Boost>(26);
 
 	// The collected while commands are inserted from stdin but printed
 	// only once all commands have been completed
@@ -131,6 +136,8 @@ public class Solution {
 			N = Integer.parseInt(inputLine);
 		}
 
+//		recordsMap = new HashMap<String, Item>(N/2, 0.5f);
+		
 		while (counter++ < N) {
 			// Tries to read N lines
 			inputLine = in.readLine();
@@ -145,31 +152,22 @@ public class Solution {
 			}else if (command.equals("DEL")) {
 				processDelCommand(inputLine);
 			}else if (command.equals("QUERY")) {
-				output.add(processQueryCommand(inputLine));
+				//output.add(
+				processQueryCommand(inputLine);
 			}else if (command.equals("WQUERY")) {
-				output.add(processWQueryCommand(inputLine));
+				//output.add(
+				processWQueryCommand(inputLine);
 			}
 			// WARNING: An empty line or Ctrl-Z terminates the program without
 			// producing any output!!!
 		}
 
 		// Prints the generated output on standard output
-		for (String s:output) {
-			System.out.println(s);
-		}
+		//for (String s:output) {
+		//	System.out.println(s);
+		//}
 
 		//DEBUG://printDB();
-	}
-
-	// DEBUG
-	/**
-	 * Utility method to print all the entities stored at any moment
-	 */
-	@SuppressWarnings("unused")
-	private static void printDB() {
-		for (Item e : records) {
-			e.print(System.out);
-		}
 	}
 
 	/**
@@ -187,17 +185,14 @@ public class Solution {
 		//float score = ;
 		//String data = ;
 		//Keeps record sorted
-		Item item = new Item(commandMatcher.group(1), commandMatcher.group(2), Float.parseFloat(commandMatcher.group(3)), commandMatcher.group(4));
-		int l = 0, r = records.size()-1, pos = 0;
-		while (l <= r){
-			pos = (l+r)/2;
-			if (records.get(pos).compareTo(item) < 0){
-				l = pos + 1;
-			}else{
-				r = pos - 1;
-			}
+		String id = commandMatcher.group(2);
+		Item newItem = new Item(commandMatcher.group(1), id, Float.parseFloat(commandMatcher.group(3)), commandMatcher.group(4));
+//		recordsMap.put(id, newItem);
+		keyTrie.insertString(id, newItem);
+		
+		for (String s: newItem.data){
+			prefixTree.insertString(s, newItem);
 		}
-		records.add(l, item);
 //		printDB();
 //		System.out.println("-----------------------------");
 	}
@@ -214,16 +209,15 @@ public class Solution {
 		commandMatcher.matches();
 		String id = commandMatcher.group(1);
 
-		for (Item e : records) {
-			// INVARIANT: ID are unique
-			if (e.id.equals(id)) {
-				records.remove(e);
-				return;
-			}
+//		Item item = recordsMap.get(id);
+		Item item = keyTrie.search(id);
+		for (String s: item.data){
+			prefixTree.removeString(s, item);
 		}
+		//keyTrie.removeKey(id);
 		// INVARIANT: all requests are legitimate, so execution should never
 		// reach this point.
-		// At the moment ignores possible illegitimate ones (should throw
+		// At the moment ignores possible unlegitimate ones (should throw
 		// exception on id not found?)
 	}
 
@@ -240,13 +234,14 @@ public class Solution {
 	 *          Creation time (when there is a tie on the score, most recents
 	 *          elements go first)
 	 */
-	private static String processQueryCommand(String queryCommand) {
+	private static void processQueryCommand(String queryCommand) {
 
 		Matcher commandMatcher = pQueryCommand.matcher(queryCommand);
 		commandMatcher.matches();
 		int numberOfResults = Integer.parseInt(commandMatcher.group(1));
 		if (numberOfResults == 0){
-			return "";
+			System.out.println("");
+			return;
 		}
 		
 		String queryString = commandMatcher.group(2);
@@ -255,52 +250,92 @@ public class Solution {
 																		// is
 																		// case
 																		// insensitive
-		Boolean match;
-
 		//SortedVector<Item> resultsVector = new SortedVector<Item>();
-		Item[] resultsVector = new Item[numberOfResults];
-		int vectorSize = 0;
+		Item[] resultsHeap = new Item[numberOfResults];
+
+		int heapSize = 0, i;
+		int pos, childPos, rightPos, parentPos;
+		
 		//resultsVector.setMaxSize(numberOfResults);
-
-		for (Item item : records) {
-
-			match = true;
-
-			for (String token: tokens) {
-				if (!item.data.containsKey(token)){
-					match = false;
-					break;
-				}
+		try{
+			for (Item item : prefixTree.search(tokens)) {
+				
+				if (heapSize == numberOfResults){
+									
+					if (item.score < resultsHeap[0].score){
+						//This item is too big for the queue
+						continue;
+					}	
+					
+	
+					// Creates a new item with the proper score, given by the
+					// original item's score multiplied by the boost that can be
+					// applied.
+					
+	                pos = 0;
+	                // Bubble up the greater child until hitting a leaf.
+	                childPos = 2 * pos + 1;    // leftmost child position
+	                while (childPos < heapSize){
+	                    // Set childpos to index of greater child.
+	                    rightPos = childPos + 1;
+	                    if (rightPos < heapSize && resultsHeap[childPos].compareTo(resultsHeap[rightPos]) < 0){
+	                        childPos = rightPos;
+	                    }
+	                    // Move the greater child up.
+	                    if (resultsHeap[childPos].compareTo(item) < 0){
+	                    	break;
+	                    }
+	                    
+	                    resultsHeap[pos] = resultsHeap[childPos];
+	                    
+	                    pos = childPos;
+	                    childPos = 2*pos + 1;
+	                }
+	                resultsHeap[pos] = item; 			      
+				}else {
+					// Creates a new item with the proper score, given by the
+					// original item's score multiplied by the boost that can be
+					// applied.
+					
+	                resultsHeap[heapSize] = item;
+	                pos = heapSize++;
+	                // Follow the path to the root, moving parents down until it finds a place
+	                // where new_item fits.
+	                while (pos > 0){
+	                    parentPos = (pos - 1) >> 1;
+	                    if (item.compareTo(resultsHeap[parentPos]) > 0){
+	                        resultsHeap[pos] = resultsHeap[parentPos];
+	                        pos = parentPos;
+	                    }else {
+	                        break;
+	                    }
+	                }
+	                resultsHeap[pos] = item;	                
+										      
+				}				
 			}
-			
-			if (match) {
-				resultsVector[vectorSize] = item;
-				++vectorSize;
-				if (vectorSize == numberOfResults){
-					//INVARIANT:	records are already sorted, so if it has filled the array, the best ones are already taken
-					break;
-				}
-
-			}
+		}catch(NullPointerException e){
+			System.out.println("");
+			return;
 		}
 		
-		if (vectorSize == 0){
-			return "";
+		if (heapSize == 0){
+			System.out.println("");
+			return;
 		}
 
-		//Arrays.sort(resultsVector, 0, vectorSize);	
-		
+		Arrays.sort(resultsHeap, 0, heapSize);	
+
 		// Creates the output string
 		StringBuilder out = new StringBuilder();
-		int i;
-		for (i=0; i<vectorSize-1; i++) {
-			Item item = resultsVector[i];
+		for (i=0; i<heapSize-1; i++) {
+			Item item = resultsHeap[i];
 			out.append(item.id);
 			out.append(" ");
 		}
-		Item item = resultsVector[i];
+		Item item = resultsHeap[i];
 		out.append(item.id);		
-		return out.toString();
+		System.out.println(out.toString());
 	}
 
 	/**
@@ -331,20 +366,16 @@ public class Solution {
 	 *          		2)	Creation time (when there is a tie on the score, 
 	 *          			most recent elements go first)
 	 */
-	private static String processWQueryCommand(String wqueryCommand) {
+	private static void processWQueryCommand(String wqueryCommand) {
 
 		Matcher commandMatcher = pWQueryCommand.matcher(wqueryCommand);
 		commandMatcher.matches();
 		Matcher boostMatcher;
-		ArrayList<Boost> vo_type_boosts = new ArrayList<Boost>();
-		ArrayList<Boost> vo_id_boosts = new ArrayList<Boost>();
-		float maxTypeBoost = 1.0f;
-		float maxIDBoost = 1.0f;
-		float maxTotalBoost = 1.0f, b;
 
 		int numberOfResults = Integer.parseInt(commandMatcher.group(1));		
 		if (numberOfResults == 0){
-			return "";
+			System.out.println("");
+			return;
 		}
 		
 		int i_numberOfBoosts = Integer.parseInt(commandMatcher.group(2));
@@ -353,6 +384,8 @@ public class Solution {
 		// need to take the substring from the end of the previous group
 		// to the end of the last occurrence of a boost
 		if (i_numberOfBoosts > 0) {
+			idBoosts.clear();
+			typeBoosts.clear();
 			// INVARIANT: Input is well formed, so the third group exists and
 			// matches the last boost in the input line.
 			String[] as_boosts = wqueryCommand.substring(
@@ -372,11 +405,7 @@ public class Solution {
 					&& (boostMatcher = pTypeBoost.matcher(as_boosts[counter]))
 							.matches()) {
 				counter++;
-				b = Float.parseFloat(boostMatcher.group(2));
-				vo_type_boosts.add(new Boost(boostMatcher.group(1), b));
-				if (maxTypeBoost < b){
-					maxTypeBoost = b;
-				}
+				typeBoosts.add(new Boost(boostMatcher.group(1), Float.parseFloat(boostMatcher.group(2))));
 			}
 
 			while (counter < i_numberOfBoosts) {
@@ -391,8 +420,7 @@ public class Solution {
 							"for WQUERY commands");					
 				}*/
 				counter++;
-				b = Float.parseFloat(boostMatcher.group(2));
-				vo_id_boosts.add(new Boost(boostMatcher.group(1), b));
+				idBoosts.add(new Boost(boostMatcher.group(1), Float.parseFloat(boostMatcher.group(2))));
 			}
 
 			// Additional check (redundant assuming the input is well formatted)
@@ -400,62 +428,44 @@ public class Solution {
 				throw new Error(
 						"Bad formatted input: please check the challenge specifications for WQUERY commands");
 			}*/
-			
-			maxTotalBoost = maxIDBoost * maxTypeBoost;
 		}
 
 		String queryString = commandMatcher.group(4);
 		String[] tokens = queryString.toLowerCase().split(SEPARATOR_RE); 
 		// INVARIANT: Search is case insensitive
-		Boolean match, token_match;
 
 		ItemResult[] resultsHeap = new ItemResult[numberOfResults];
 		
 		int heapSize = 0, i;
-		float borderScore = 0.0f;
 		int pos, childPos, rightPos, parentPos;
 		
-		for (Item item : records) {
-
-			if (heapSize == numberOfResults){
-				
-				if(item.score < borderScore ){
-					//Items are ordered according to score, so there can't be any better score than this one
-					break;
-				}
-				// Computes the boost factor first
-				float mul = 1.0f;
-				for (Boost boost : vo_type_boosts) {
-					if (item.type.equals(boost.getPattern())) {
-						mul *= boost.getMultiplier();
-						// INVARIANT: assuming each type boost can match only once
-						break;
+		try{
+			for (Item item : prefixTree.search(tokens)) {
+	
+				if (heapSize == numberOfResults){
+					
+					// Computes the boost factor first
+					float mul = 1.0f;
+					for (Boost boost : typeBoosts) {
+						if (item.type.equals(boost.pattern)) {
+							mul *= boost.mul;
+							// INVARIANT: assuming each type boost can match only once
+							break;
+						}
 					}
-				}
-				for (Boost boost : vo_id_boosts) {
-					if (item.id.equals(boost.getPattern())) {
-						mul *= boost.getMultiplier();
-						// INVARIANT: assuming each ID boost can match only once
-						break;
+					for (Boost boost : idBoosts) {
+						if (item.id.equals(boost.pattern)) {
+							mul *= boost.mul;
+							// INVARIANT: assuming each ID boost can match only once
+							break;
+						}
 					}
-				}
-				
-				if (item.score * mul < resultsHeap[0].score){
-					//This item is too big for the queue
-					continue;
-				}	
-				
-				match = true;
-
-				for (String token: tokens) {
-					if (!item.data.containsKey(token)){
-						match = false;
-						break;
-					}
-				}				
-				
-				if (match) {
-
+					
+					if (item.score * mul < resultsHeap[0].score){
+						//This item is too big for the queue
+						continue;
+					}	
+					
 					// Creates a new item with the proper score, given by the
 					// original item's score multiplied by the boost that can be
 					// applied.
@@ -481,42 +491,27 @@ public class Solution {
 	                    pos = childPos;
 	                    childPos = 2*pos + 1;
 	                }
-	                resultsHeap[pos] = itemR; 
-	                
-	                borderScore = resultsHeap[0].score / maxTotalBoost;		//Scales the limit score according to the max possible boost factor.
-			      
-				}				
-			}else {
-				//The Heap isn't full yet
+	                resultsHeap[pos] = itemR; 			      
+				}else {
+					//The Heap isn't full yet
+					
+					// Computes the boost factor first
+					float mul = 1.0f;
+					for (Boost boost : typeBoosts) {
+						if (item.type.equals(boost.pattern)) {
+							mul *= boost.mul;
+							// INVARIANT: assuming each type boost can match only once
+							break;
+						}
+					}
+					for (Boost boost : idBoosts) {
+						if (item.id.equals(boost.pattern)) {
+							mul *= boost.mul;
+							// INVARIANT: assuming each ID boost can match only once
+							break;
+						}
+					}
 				
-				// Computes the boost factor first
-				float mul = 1.0f;
-				for (Boost boost : vo_type_boosts) {
-					if (item.type.equals(boost.getPattern())) {
-						mul *= boost.getMultiplier();
-						// INVARIANT: assuming each type boost can match only once
-						break;
-					}
-				}
-				for (Boost boost : vo_id_boosts) {
-					if (item.id.equals(boost.getPattern())) {
-						mul *= boost.getMultiplier();
-						// INVARIANT: assuming each ID boost can match only once
-						break;
-					}
-				}
-			
-				match = true;
-
-				for (String token: tokens) {
-					if (!item.data.containsKey(token)){
-						match = false;
-						break;
-					}
-				}	
-				
-				if (match) {
-
 					// Creates a new item with the proper score, given by the
 					// original item's score multiplied by the boost that can be
 					// applied.
@@ -539,16 +534,14 @@ public class Solution {
 										      
 				}				
 			}
-			
-
-			
-
-
-
+		}catch(NullPointerException e){
+			System.out.println("");
+			return;
 		}
 		
 		if (heapSize == 0){
-			return "";
+			System.out.println("");
+			return;
 		}
 
 		Arrays.sort(resultsHeap, 0, heapSize);	
@@ -562,9 +555,337 @@ public class Solution {
 		}
 		ItemResult item = resultsHeap[i];
 		out.append(item.id);		
-		return out.toString();
+		System.out.println(out.toString());
 	}
 
+
+	
+	private static class PatriciaTree{
+
+		private static class PatriciaTreeNode{
+			private String label;
+			
+			public PatriciaTreeNode(){
+				
+			}
+			
+			public PatriciaTreeNode(String l, Item item){
+				this.label = l;
+				this.items.add(item);
+			}
+			
+			@SuppressWarnings("unchecked")
+			public PatriciaTreeNode(String label, ArrayList<PatriciaTreeNode> childrenReference, HashSet<Item> items){
+				this.label = label;
+				this.children = childrenReference;
+				this.items = (HashSet<Item>)(items.clone());
+			}
+
+			private ArrayList<PatriciaTreeNode> children = new ArrayList<PatriciaTreeNode>();
+			private HashSet<Item> items = new HashSet<Item>();
+			
+			public PatriciaTreeNode search(String s){
+				int l = 0, r = children.size()-1, pos = 0;
+				char tmp_c, c;
+				try{
+					c = s.charAt(0);
+				}catch(StringIndexOutOfBoundsException e){
+					return null;
+				}
+				while (l <= r){
+					pos = (l+r)/2;
+					PatriciaTreeNode child = children.get(pos);
+					String label = child.label;
+					int l_len = label.length();
+					tmp_c = label.charAt(0);
+					if (tmp_c == c){
+						int i = 1;
+						int s_len = s.length();
+						
+						int n = Math.min(s_len, l_len);
+						for (; i < n; i++){
+							if (s.charAt(i) != label.charAt(i)){
+								break;
+							}
+						}
+						if (i == s_len){
+							return child;
+						}else if (i == l_len){
+							return child.search(s.substring(i));
+						}else{
+							return null;
+						}
+					}else if (tmp_c < c){
+						l = pos + 1;
+					}else{
+						r = pos - 1;
+					}
+				}
+
+				return null;
+			}
+
+			
+			public void insertChild(String s, Item item){
+				int size = children.size(), l = 0, r = size - 1, pos = 0;
+				int s_len = s.length();
+				char tmp_c, c;
+				try{
+					c = s.charAt(0);
+				}catch(StringIndexOutOfBoundsException e){
+					return ;
+				}
+				while (l <= r){
+					pos = (l+r)/2;
+					PatriciaTreeNode child = children.get(pos);
+					String label = child.label;
+					int l_len = label.length();
+					
+					tmp_c = label.charAt(0);
+					if (tmp_c == c){
+						
+						int n = Math.min(l_len, s_len);
+						int i = 1;
+						for (; i < n; i++){
+							if (label.charAt(i) != s.charAt(i)){
+								break;
+							}
+						}
+						if (i < l_len){
+							String restOfl = label.substring(i);
+							child.label = s.substring(0, i);
+							
+							PatriciaTreeNode new_child = new PatriciaTreeNode(restOfl, child.children, child.items);
+							child.children = new ArrayList<PatriciaTreeNode>(2);	//old var has exausted its life
+							child.children.add(new_child);
+							child.items.add(item);
+							if (i < s_len){
+								String restOfs = s.substring(i);
+								new_child = new PatriciaTreeNode(restOfs, item);
+								if ( restOfl.compareTo(restOfs) < 0){
+									child.children.add(new_child);
+								}else{
+									child.children.add(0, new_child);
+								}
+							}
+						}else if (i < s_len){
+							child.items.add(item);
+							String restOfs = s.substring(i);
+							child.insertChild(restOfs, item);
+						}else{
+							child.items.add(item);
+						}
+						return ;
+					}else if (tmp_c < c){
+						l = pos + 1;
+					}else{
+						r = pos - 1;
+					}
+				}
+
+				
+				PatriciaTreeNode node = new PatriciaTreeNode(s, item);
+				this.children.add(l, node);
+				return ;
+			}
+			
+			public void removeItem(String s, Item item){
+				int l = 0, r = children.size()-1, pos = 0;
+				char tmp_c, c;
+				try{
+					c = s.charAt(0);
+				}catch(StringIndexOutOfBoundsException e){
+					return ;
+				}
+				while (l <= r){
+					pos = (l+r)/2;
+					PatriciaTreeNode child = children.get(pos);
+					String label = child.label;
+					int l_len = label.length();
+					tmp_c = label.charAt(0);
+					if (tmp_c == c){
+						child.items.remove(item);
+						int i = 1;
+						int s_len = s.length();
+						
+						int n = Math.min(s_len, l_len);
+						for (; i < n; i++){
+							if (s.charAt(i) != label.charAt(i)){
+								break;
+							}
+						}
+						if (i == l_len && i < s_len){
+							child.removeItem(s.substring(i), item);
+							return ;
+						}else{
+							return ;
+						}
+					}else if (tmp_c < c){
+						l = pos + 1;
+					}else{
+						r = pos - 1;
+					}
+				}
+
+			}
+		}
+		
+		private PatriciaTreeNode root = new PatriciaTreeNode();
+		
+		public void insertString(String label, Item item){
+			root.insertChild(label, item);
+		}
+
+		public void removeString(String s, Item item){
+			root.removeItem(s, item);
+		}
+		
+		public HashSet<Item> search(String s){
+			try {
+				return root.search(s).items;
+			}catch(NullPointerException e){
+				return null;
+			}
+		}
+		
+		public HashSet<Item> search(String[] sArray){
+			HashSet<Item> results, tmp_result, tmp;
+			try{
+				results = search(sArray[0]);
+			}catch(IndexOutOfBoundsException e){
+				return null;
+			}
+			
+			int n = sArray.length;
+			for (int i = 1; i < n; i++){
+				try{
+					if (results.isEmpty()){
+						return results;
+					}
+					tmp_result = search(sArray[i]);
+					tmp = new HashSet<Solution.Item>(results.size());
+					for (Item item: tmp_result){
+						if (results.contains(item)){
+							tmp.add(item);
+						}
+					}
+					results = tmp;				
+				}catch(NullPointerException e){
+					return null;
+				}
+			}
+			return results;
+		}
+
+	
+	}	
+	
+	
+
+	
+	private static class Trie{
+
+		private static class TrieNode{
+			private char c;
+			private final ArrayList<TrieNode> children = new ArrayList<TrieNode>();
+			private Item item = null;
+			
+			
+			public TrieNode(){
+				
+			}
+			
+			public TrieNode(char c){
+				this.c = c;
+			}
+			
+			public TrieNode search(char c){
+				int l = 0, r = children.size()-1, pos = 0;
+				char tmp_c;
+				while (l <= r){
+					pos = (l+r)/2;
+					tmp_c = children.get(pos).c;
+					if (tmp_c == c){
+						return children.get(pos);
+					}else if (tmp_c < c){
+						l = pos + 1;
+					}else{
+						r = pos - 1;
+					}
+				}
+
+				return null;
+			}
+
+			
+			public TrieNode insertChild(char c){
+				int size = children.size(), l = 0, r = size - 1, pos = 0;
+				char tmp_c;
+				while (l <= r){
+					pos = (l+r)/2;
+					TrieNode child = children.get(pos);
+					tmp_c = child.c;
+					if (tmp_c == c){
+						return child;
+					}else if (tmp_c < c){
+						l = pos + 1;
+					}else{
+						r = pos - 1;
+					}
+				}
+
+				TrieNode node = new TrieNode(c);
+				this.children.add(l, node);
+				return node;
+			}
+			
+			public void setItem(Item item){
+				this.item = item;
+			}
+/*			
+			public void removeItem(Item item){
+				item = null;
+			}
+*/
+		}
+		
+		private TrieNode root = new TrieNode();
+		
+		public void insertString(String s, Item item){
+			char[] cArray = s.toCharArray();
+			TrieNode node = root;
+			for (char c: cArray){
+				node = node.insertChild(c);
+			}
+			node.setItem(item);
+		}
+
+		/*
+		public void removeKey(String s, Item item){
+			char[] cArray = s.toCharArray();
+			TrieNode node = root;
+			for (char c: cArray){
+				node = node.search(c);
+			}
+			node.removeItem(item);
+		}*/
+		
+		public Item search(String s){
+			char[] cArray = s.toCharArray();
+			TrieNode node = root, child;
+			for (char c: cArray){
+				try{
+					child = node.search(c);
+					node = child;
+				}catch(NullPointerException e){
+					return null;
+				}
+			}
+			return node.item;			
+		}
+		
+	}	
+	
 	/**
 	 * class Item
 	 * 
@@ -577,7 +898,7 @@ public class Solution {
 		protected String type;
 		protected String id;
 		protected float score;
-		protected final HashMap<String, Integer> data = new HashMap<>(110);	//MAx 100 characters => max 100 prefix
+		protected final String[] data;
 		private int creationTime;
 
 		private static int time = 0;
@@ -602,14 +923,8 @@ public class Solution {
 			this.type = type;
 			this.id = id;
 			this.score = score;
-			String prefix;
-			String tokens[] = data.toLowerCase().split(SEPARATOR_RE);
-			for (String token: tokens){
-				for (int i=1; i<=token.length(); i++){
-					prefix = token.substring(0, i);
-					this.data.put(prefix, 1);
-				}
-			}			
+
+			this.data = data.toLowerCase().split(SEPARATOR_RE);
 			//Arrays.sort(this.data);
 			this.creationTime = ++time; 	// Keeps track of the creation time
 											// to make it easy to check which of
@@ -645,13 +960,13 @@ public class Solution {
 		 * specific PrintStream.
 		 * 
 		 * @param out:	The output stream on which the data has to be printed.
-		 */
 		private void print(PrintStream out) {
 			out.println("ID: " + this.id + " of type " + this.type);
 			out.println("\t creation time: " + this.creationTime
 					+ "; score: " + this.score);
 			out.println("\t " + this.data);
 		}
+		 */
 
 	}
 		
@@ -727,8 +1042,8 @@ public class Solution {
 	 *         boost).
 	 */
 	private static class Boost {
-		String pattern;
-		float mul;
+		private String pattern;
+		private float mul;
 
 		/**
 		 * Constructor: inits the Boost's attributes
@@ -741,24 +1056,5 @@ public class Solution {
 			this.pattern = pattern;
 			this.mul = multiplier;
 		}
-
-		/**
-		 * Pattern getter
-		 * 
-		 * @return: The string pattern.
-		 */
-		public String getPattern() {
-			return this.pattern;
-		}
-
-		/**
-		 * Score boost getter
-		 * 
-		 * @return: The boost factor to be applied to items' scores.
-		 */
-		public float getMultiplier() {
-			return this.mul;
-		}
 	}
-
 }
